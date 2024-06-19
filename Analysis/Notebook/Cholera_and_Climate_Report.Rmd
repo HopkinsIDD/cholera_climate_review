@@ -14,9 +14,10 @@ library(sf)
 library(ggplot2)
 library(maps)
 library(rnaturalearth)
+library(here)
 
 #load the extraction spreadsheet
-est_data <- read_excel("../../Data/cholera_climate_systematic_review_extract_into_sheets.xlsx",sheet = "estimates_0329")
+est_data <- read_excel(here("Data/cholera_climate_systematic_review_extract_into_sheets.xlsx"), sheet = "estimates_0329")
 
 est_data$eff_tl_year<- 1000
 est_data$eff_tr_year<- 1000
@@ -45,7 +46,7 @@ est_data <- est_data %>%
     )
   )
 
-meta_data <- read_excel("../../Data/cholera_climate_systematic_review_extract_into_sheets.xlsx",sheet = "metadata_0329") %>% 
+meta_data <- read_excel(here("Data/cholera_climate_systematic_review_extract_into_sheets.xlsx"), sheet = "metadata_0329") %>% 
   filter(remove_keep == "keep")
 ```
 
