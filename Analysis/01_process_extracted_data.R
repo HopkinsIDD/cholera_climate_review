@@ -13,7 +13,7 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-p", "--do_plots"), 
-              default = FALSE, action ="store", type = "logical", help = "Make intermediate plots.")
+              default = TRUE, action ="store", type = "logical", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -434,12 +434,6 @@ if (opt$do_plots) {
          width = 14, height = 8, dpi = 400)
   
   
-  ggsave(p_estimates_direction +
-           theme(legend.position = "bottom",
-                 legend.direction = "horizontal") ,
-         filename = "figures/estimate_direction.png", 
-         width = 8, height = 6, dpi = 300)
-  
   # Boxplot by full score and continent
   p_corr <- est_data %>%
     # filter(a_class == "correlation") %>%
@@ -580,7 +574,8 @@ if (opt$do_plots) {
       dat <- est_data %>%
         filter(!(a_direction %in%  c("not stated", "none")), admin_level == x,
                studykey %in% full_score_papers$studykey) %>% 
-        make_direction_counts(vars = c("admin_level", "exp_class", "continent"))
+        make_direction_counts(vars = c("admin_level", "exp_class", "continent")) %>% 
+        simplify_direction_levels()
       
       if (nrow(dat) == 0) {
         return(NULL)
@@ -666,9 +661,14 @@ dir_counts_lag <- est_data %>%
 
 if (opt$do_plots) {
   
-  plot_direction_by_var(df = dir_counts_lag,
-                        x_var = "lag_class",
-                        do_facet = TRUE)
+  p_dir_lag <- plot_direction_by_var(df = dir_counts_lag,
+                                     x_var = "lag_class",
+                                     do_facet = TRUE,
+                                     facet_scales = "free",
+                                     facet_space = "free_x")
+  
+  ggsave(p_dir_lag, filename = "figures/effect_directions_lags.png", 
+         width = 10, height = 6, dpi = 300)
 }
 
 # Rainy season ------------------------------------------------------------
@@ -682,9 +682,16 @@ dir_counts_rainy_season <- est_data %>%
 
 if (opt$do_plots) {
   
-  plot_direction_by_var(df = dir_counts_rainy_season,
-                        x_var = "rainy_season",
-                        do_facet = TRUE)
+  p_dir_rainy <- plot_direction_by_var(df = dir_counts_rainy_season,
+                                       x_var = "rainy_season",
+                                       do_facet = TRUE,
+                                       facet_scales = "free",
+                                       facet_space = "free_x")
+  
+  
+  
+  ggsave(p_dir_rainy, filename = "figures/effect_directions_rainy_season.png", 
+         width = 10, height = 6, dpi = 300)
 }
 
 # Urban/rural -------------------------------------------------------------
@@ -697,12 +704,39 @@ dir_counts_urban_rural <- est_data %>%
 
 if (opt$do_plots) {
   
-  plot_direction_by_var(df = dir_counts_urban_rural,
-                        x_var = "urban_rural_class",
-                        do_facet = TRUE)
+  p_dir_urb <- plot_direction_by_var(df = dir_counts_urban_rural,
+                                     x_var = "urban_rural_class",
+                                     do_facet = TRUE,
+                                     facet_scales = "free",
+                                     facet_space = "free_x")
+  
+  
+  ggsave(p_dir_urb, filename = "figures/effect_directions_urbanicity.png", 
+         width = 10, height = 6, dpi = 300)
   
 }
 
+
+if (opt$do_plots) {
+  # Combine directions
+  dir_plots <- cowplot::plot_grid(
+    p_dir_lag + 
+      guides(fill = "none", alpha = "none"),
+    p_dir_rainy + 
+      guides(fill = "none", alpha = "none") +
+      theme(axis.title.y = element_blank()),
+    p_dir_urb  +
+      theme(axis.title.y = element_blank()),
+    nrow = 1,
+    labels = "auto",
+    rel_widths = c(1.5, 1, 1.5),
+    align = "h",
+    axis = "tb"
+  )
+  
+  ggsave(dir_plots, filename = "figures/combined_directions_by_covar.png", 
+         width = 14, height = 6.5, dpi = 300)
+}
 
 
 # Effect sizes ------------------------------------------------------------
@@ -807,6 +841,8 @@ if (opt$do_plots) {
                               plot_function = plot_effect_by_var,
                               plot_function_opt = list(do_facet = T,
                                                        facet_drop = F,
+                                                       facet_scales = "free",
+                                                       facet_space = "free_x",
                                                        ylim = NULL))
   
   
@@ -837,12 +873,6 @@ if (opt$do_plots) {
   ggsave(p_comb, filename = "figures/combined_by_covar.png", 
          width = 14, height = 20, dpi = 300)
   
-  # Combine directions
-  dir_plots <- map_plot(plot_data = dir_counts_lag,
-                        y_lab = "Count",
-                        plot_function = plot_direction_by_var,
-                        plot_function_opt = list(do_facet = T,
-                                                 facet_drop = T))
 }
 
 
@@ -851,8 +881,9 @@ save(corr_data, log10_ratio_data, risk_diff_data,
      file = "generated_data/processed_effect_size_data_by_type.rdata")
 
 
-# Scraps ------------------------------------------------------------------
 
+
+# Scraps ------------------------------------------------------------------
 
 # Proportion of admin levels by continent
 # --> Africa has more ADM0 level effects
