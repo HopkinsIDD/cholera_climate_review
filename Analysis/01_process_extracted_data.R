@@ -35,12 +35,25 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   # Fix classes of estimates
   mutate(a_class = case_when(str_detect(a_raw, "correlation") ~ "correlation",
                              a_class == "correlation" & !str_detect(a_class, "correlation") ~ "other",
-                             TRUE ~ a_class))  %>%
+                             TRUE ~ a_class),
+         a_class = case_when(studykey == "Hulland2019" & exp_class == "precipitation" ~ "risk difference",
+                             T ~ a_class))  %>%
+  # Determine if effect is already on log scale (important for ratios)
+  group_by(studykey, exp_class, a_raw) %>% 
+  mutate(a_effect_log_scale = case_when(a_class == "ratio" & any(a_effect < 0) ~ TRUE,
+                                        a_class == "ratio" & studykey == "Charnley2021" ~ TRUE,
+                                        a_class == "ratio" & studykey == "Yang2022" ~ TRUE,
+                                        TRUE ~ FALSE)) %>% 
+  ungroup() %>% 
   # Se ratio to log10 ratio for plots
-  mutate(a_effect = case_when(a_class == "ratio" ~ log10(a_effect),
-                              TRUE ~ a_effect),
-         a_class = case_when(a_class == "ratio" ~ "log10_ratio",
-                             TRUE ~ a_class)) %>% 
+  mutate(a_effect = case_when(
+    # This is when the ratio is already on a log scale
+    a_class == "ratio" & a_effect_log_scale ~ log10(exp(a_effect)),
+    # This is when the ratio is already on a log scale
+    a_class == "ratio" ~ log10(a_effect),
+    TRUE ~ a_effect),
+    a_class = case_when(a_class == "ratio" ~ "log10_ratio",
+                        TRUE ~ a_class)) %>% 
   # Levels
   mutate(a_direction = factor(a_direction, levels = c("negative", "none", "positive", "not stated"))) %>%
   # Spatial scales
@@ -755,6 +768,8 @@ if (opt$do_plots) {
                                 plot_function = plot_effect_by_var,
                                 plot_function_opt = list(do_facet = T,
                                                          facet_drop = F,
+                                                         facet_scales = "free",
+                                                         facet_space = "free_x",
                                                          ylim = NULL))
   
   

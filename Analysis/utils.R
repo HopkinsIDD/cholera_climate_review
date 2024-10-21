@@ -146,7 +146,8 @@ make_direction_counts <- function(df,
 correct_effect <- function(df, 
                            thresh = 0) {
   df %>% 
-    mutate(a_effect = case_when(a_direction == "negative" & a_effect > thresh ~ - a_effect,
+    mutate(a_effect_raw = a_effect,
+           a_effect = case_when(a_direction == "negative" & a_effect > thresh ~ - a_effect,
                                 a_direction == "positive" & a_effect < thresh ~ -a_effect,
                                 T ~ a_effect))
 }
