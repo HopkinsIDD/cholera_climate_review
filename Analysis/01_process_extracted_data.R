@@ -1,6 +1,5 @@
 # This script is processes the extracted systematic review data
 
-
 # Preamble ----------------------------------------------------------------
 
 library(tidyverse)
@@ -13,7 +12,7 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-p", "--do_plots"), 
-              default = TRUE, action ="store", type = "logical", help = "Make intermediate plots.")
+              default = FALSE, action ="store", type = "logical", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -70,10 +69,16 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
          lag_class = cut(lag_days, c(0, 8, 15, 32, 62, 92, Inf)),
          lag_class = factor(lag_class, labels = c("1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months"))) %>% 
   # Define rainy season
-  mutate(rainy_season = factor(rainy_season, levels = c("out_of_rainy_season", "mixed", "in_rainy_season"))) %>% 
+  mutate(rainy_season = factor(rainy_season, 
+                               levels = c("out_of_rainy_season", "mixed", "in_rainy_season"), 
+                               labels = c("out_of_rainy_season", "both seasons", "in_rainy_season"))) %>% 
   # Define urba/rural
   mutate(urban_rural_class = factor(urban_rural_class, levels = c("rural", "mixed", "urban"))) %>% 
-  add_continent(country_col = "eff_country") 
+  add_continent(country_col = "eff_country") %>% 
+  mutate(continent = factor(continent)) %>% 
+  mutate(a_uncert_significant = factor(a_uncert_significant, 
+                                       levels = c("TRUE", "FALSE", "NA"),
+                                       labels = c("TRUE", "FALSE", "unspecified")))
 
 
 # Save
@@ -529,7 +534,7 @@ score_dict <- c("tot_score" = "total score",
                 "a_score" = "analysis")  
 
 
-saveRDS(sum_scores_long, file = "sum_scores_long.rds")
+saveRDS(sum_scores_long, file = "generated_data/sum_scores_long.rds")
 
 if (opt$do_plots) {
   
@@ -879,85 +884,3 @@ if (opt$do_plots) {
 # Save
 save(corr_data, log10_ratio_data, risk_diff_data, 
      file = "generated_data/processed_effect_size_data_by_type.rdata")
-
-
-
-
-# Scraps ------------------------------------------------------------------
-
-# Proportion of admin levels by continent
-# --> Africa has more ADM0 level effects
-# p_estimates_admin <- est_data  %>%
-#   filter(a_direction != "not stated") %>%
-#   count(admin_level, continent) %>% 
-#   group_by(admin_level) %>% 
-#   mutate(frac = n/sum(n)) %>% 
-#   ggplot(aes(x = continent, y = n, fill = continent)) +
-#   geom_bar(stat = "identity") +
-#   # geom_text(aes(label = n),
-#   #           position = position_fill(.5)) +
-#   theme_bw() +
-#   labs(x = "Continent", y = "Number of estimates") +
-#   facet_grid(admin_level ~ ., switch = "y", scales = "free") +
-#   scale_fill_manual(values = colors_continent()) +
-#   theme(
-#     # panel.border = element_blank(),
-#     axis.line.x = element_line(),
-#     # axis.text.x = element_blank(),
-#     # axis.ticks.x = element_blank(),
-#     legend.position = "right",
-#     legend.direction = "vertical")
-
-# Bar plot of directions
-# p_estimates_direction <- est_data %>%
-#   filter(!(a_direction %in%  c("not stated", "none"))) %>% 
-#   count(admin_level, exp_class, continent, a_direction) %>%
-#   group_by(admin_level, continent, exp_class) %>% 
-#   mutate(frac = n/sum(n)) %>% 
-#   ggplot(aes(x = continent, y = frac, fill = a_direction)) +
-#   geom_bar(stat = "identity") +
-#   geom_hline(aes(yintercept = .5), lty = 2, lwd = .5)  +
-#   geom_text(aes(label = n),
-#             position = position_fill(.5), color = "white") +
-#   facet_grid(admin_level ~ exp_class, switch = "y") +
-#   theme_bw() +
-#   scale_fill_manual(values = c("red", "blue")) +
-#   labs(x = "Continent", y = "Proportion of estimates", fill = "Estimate direction") +
-#   theme(panel.border = element_blank(),
-#         axis.line.x = element_line(),
-#         legend.position = "right",
-#         legend.direction = "vertical")
-# 
-# p_estimates_direction
-
-
-
-# 
-# est_data %>% 
-#   mutate(a_effect = case_when(a_direction == "negative" & a_effect > 0 ~ -a_effect,
-#                               a_direction == "positive" & a_effect < 0 ~ -a_effect,
-#                               T ~ a_effect)) %>%
-#   filter(!(a_direction %in%  c("not stated", "none"))) %>% 
-#   mutate(lag_days = ifelse(lag_days == "missing", NA_character_, lag_days) %>% as.numeric(),
-#          lag_class = cut(lag_days, c(0, 8, 15, 32, 62, 92, Inf)),
-#          lag_class = factor(lag_class, labels = c("week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months"))) %>%
-#   mutate(stat_sign = case_when(is.na(a_uncert_significant) | a_uncert_significant == "NA" ~ "not reported",
-#                                a_uncert_significant == "TRUE" ~ "statistically significant",
-#                                T ~ "not statistically significant"),
-#          stat_sign = factor(stat_sign, rev(c("statistically significant",
-#                                              "not statistically significant",
-#                                              "not reported"))),
-#          a_direction = factor(a_direction, levels = c("negative", "positive")),
-#          lag_class_def = ifelse(!is.na(lag_class), "lag specificed", "unspecified"),
-#          lag_class_def = factor(lag_class_def, levels = c("lag specificed", "unspecified"))) %>% 
-#   filter(!is.na(lag_class)) %>% 
-#   ggplot(aes(x = lag_class, y = a_effect)) +
-#   geom_boxplot(aes(group = lag_class), outliers = F) +
-#   geom_jitter(aes(alpha = stat_sign, color = a_direction,
-#                   pch = out_class_metric), width = .2, height = 0) +
-#   geom_hline(aes(yintercept = 0), lwd = .5, lty = 2) +
-#   facet_grid(a_class ~  exp_class, scales = "free") +
-#   # ggh4x::facet_nested(continent ~ lag_class_def  + exp_class , scales = "free_x", space = "free") +
-#   scale_color_manual(values = rev(c("red", "blue")), drop = F) +
-#   scale_alpha_manual(values = c(.2, .4, 1), drop = F) +
-#   theme_bw() 

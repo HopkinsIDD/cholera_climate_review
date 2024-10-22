@@ -161,6 +161,19 @@ get_estimate_thresholds <- function() {
   )
 }
 
+get_all_covar_patterns <- function() {
+  "continent|admin_level|full_score|lag_class|urban_rural_class|rainy_season"
+}
+
+get_all_effects <- function() {
+  c("corr", "diff", "ratio")
+}
+
+get_all_exp_class <- function() {
+  c("flood", "drought", "precipitation", "temperature")
+}
+
+
 # Plots -------------------------------------------------------------------
 
 
@@ -320,3 +333,24 @@ map_plot <- function(vars = c("lag_class", "rainy_season", "urban_rural_class"),
     })
 }
 
+
+# Misc --------------------------------------------------------------------
+
+z_transform <- function(x) {
+  0.5 * log((1+x)/(1-x))
+}
+
+inv_z_transform <- function(x) {
+  exp(2*x - 1)/exp(2*x + 1)
+}
+
+
+# File names --------------------------------------------------------------
+
+make_output_filename <- function(effect, exposure) {
+  str_glue("generated_data/stan_output_{effect}_{exposure}.rds")
+}
+
+make_stan_data_filename <- function(effect, exposure) {
+  str_glue("generated_data/stan_data_{effect}_{exposure}.rds")
+}
