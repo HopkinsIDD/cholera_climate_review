@@ -9,22 +9,32 @@ data {
   int<lower=0> N_full;      // number of observations for which all covariates are available
   int<lower=0> N_missing;   // number of observations with missing covariates
   matrix[N, J] X;
-  vector[N] y;
+  int<lower=0> L;    // number of classes of precision
+  int<lower=0> M;    // number of missing covariates
+
+  vector[N] y;    // observations
   
   array[N] int<lower=1, upper=K> map_to_study;    // map from observation to study
-  // vector[J]<lower=1> n_covar_levels;    // number of levels per covariate
+  array[N] int<lower=1, upper=L> map_to_weight;    // map from observation to study
   array[N_full] int<lower=1, upper=N> ind_full;
   array[N_missing] int<lower=1, upper=N> ind_missing;
-  // array[N_missing, J] int<lower=0, upper=1> missing_covar_levels_indexing;    // index of levels of covariates to marginalize over
-  array[N_missing, J] int<lower=0, upper=J> missing_covar_levels;    // map to index of covariates to marginalize over
-  
-  vector<lower=0,upper=1>[J] p_missing_covar;
+  matrix[M, J] X_missing;    
+  array[N_missing] int<lower=1, upper=M> missing_covar_starts;
+  array[N_missing] int<lower=1, upper=M> missing_covar_ends;
+  vector<lower=0,upper=1>[M] p_missing_covar;
 }
 
+transformed data {
+  array[N_missing] int len_missing_comb;
+  
+  for (i in 1:N_missing) {
+    len_missing_comb[i] = missing_covar_ends[i] - missing_covar_starts[i] + 1;
+  }
+}
 
 parameters {
   vector[J] beta;
-  real<lower=0> sigma;
+  positive_ordered[L] sigma;
   vector[K] eta_raw;
   real<lower=0> sigma_re;
 }
@@ -40,42 +50,34 @@ transformed parameters {
   
   if (N_missing > 0) {
     for (i in 1:N_missing) {
-      real mu;   // mean
+      int l = len_missing_comb[i];
       int k = ind_missing[i];
-      vector[J] ll_tmp = rep_vector(0, J);
+      vector[l] ll_tmp;
       int counter = 1;
-      // Value without missing covariates (X is 0 in places where covariate is missing)
-      mu = X[k, ] * beta + eta_raw[map_to_study[k]] * sigma_re;
       
-      ll_tmp[1] = normal_lpdf(y[k]| mu, sigma);
-      
-      for (j in 1:J) {
-        real mu_tmp = mu;
-        int l = missing_covar_levels[i, j];
-        real tot_p = 0;
-        
-        if (l > 0) {
-          mu_tmp += beta[l];
-          counter += 1;
-          tot_p += p_missing_covar[l];
-          ll_tmp[counter] += normal_lpdf(y[k]| mu_tmp, sigma) + log(p_missing_covar[l]);
-        }
-        
-        ll_tmp[1] += log1m(tot_p);
+      for (j in missing_covar_starts[i]:missing_covar_ends[i]) {
+        real mu_tmp  = X_missing[j, ] * beta + eta_raw[map_to_study[k]] * sigma_re;
+        ll_tmp[counter] = normal_lpdf(y[k]| mu_tmp, sigma[map_to_weight[k]]) + log(p_missing_covar[j]);
+        counter += 1;
       }
-      
-      ll_missing[i] = log_sum_exp(ll_tmp[1:counter]);
+      ll_missing[i] = log_sum_exp(ll_tmp);
     }
   }  
   
 }
 model {
   
-  y[ind_full] ~ normal(mu_full, sigma);
+  y[ind_full] ~ normal(mu_full, sigma[map_to_weight[ind_full]]);
   target += sum(ll_missing);
   
   beta ~ normal(0, 1);
   eta_raw ~ std_normal();
   sigma ~ normal(0, 2);
   sigma_re ~ normal(0, 2);
+}
+
+generated quantities {
+  vector[L] I_squared;
+  
+  I_squared = sigma_re^2 / (sigma_re^2 + sigma.^2);
 }

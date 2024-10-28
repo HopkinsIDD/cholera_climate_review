@@ -11,9 +11,9 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-e", "--effect"), 
-              default = "corr", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
-              default = "precipitation", action ="store", type = "character", help = "Make intermediate plots.")
+              default = "flood", action ="store", type = "character", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -23,6 +23,7 @@ print(opt)
 
 # Load the effect sizes by type
 load("generated_data/processed_effect_size_data_by_type.rdata")
+est_data <- readRDS("generated_data/processed_estimate_data.rds")
 
 full_scores <- readRDS("generated_data/sum_scores_long.rds") %>% 
   filter(what == "overall", value)
@@ -31,9 +32,11 @@ if (opt$effect == "corr") {
   data <- corr_data 
 } else if (opt$effect == "ratio") {
   data <- log10_ratio_data
-  y <- data$a_effect
 } else if (opt$effect == "diff") {
   data <- risk_diff_data
+} else if (str_detect(opt$effect, "direction")) {
+  data <- readRDS(file = "generated_data/processed_estimate_data.rds") %>% 
+    filter(!(a_direction %in%  c("not stated", "none")))
 } else {
   stop("Effect ", opt$effect, " not found.")
 }
@@ -45,6 +48,10 @@ data <- data %>%
 # Transform data if necessary
 if (opt$effect == "corr") {
   y <- z_transform(data$a_effect)
+} else if (opt$effect == "direction_positive") {
+  y <- data$a_direction == "positive"
+} else if (opt$effect == "direction_negative") {
+  y <- data$a_direction == "negative"
 } else {
   y <- data$a_effect
 }
@@ -72,68 +79,88 @@ if (nrow(data) == 0) {
 
 options(na.action='na.pass')
 if (length(unique(data$full_score)) > 1) {
-  X <- model.matrix(~ continent + admin_level + full_score + lag_class + rainy_season + urban_rural_class, 
-                    data = data)
+  eq <- ~ continent + admin_level + full_score + lag_class + rainy_season + urban_rural_class
 } else {
-  X <- model.matrix(~ continent + admin_level + lag_class + rainy_season + urban_rural_class, 
-                    data = data)
+  eq <- ~ continent + admin_level + lag_class + rainy_season + urban_rural_class
 }
+
+# Parse the list of covariates used to save
+all_covars <-  as.character(eq)[2] %>% 
+  str_remove('~') %>% 
+  str_split("\\+") %>% 
+  .[[1]] %>% 
+  str_trim()
+
+# Make the model matrix
+X <- model.matrix(eq, data = data)
 
 # Prepare information for marginalizing
 is_ind_missing <- apply(X, 1, function(x) any(is.na(x)))
 ind_missing <- which(is_ind_missing)
 ind_full <- which(!is_ind_missing)
-missing_covar_levels <- matrix(0, nrow  = length(ind_missing), ncol = ncol(X))
 
-counter <- 1
-all_missing_covar <- c()
-
-all_covars_pattern <- get_all_covar_patterns()
-all_covars <- str_extract_all(colnames(X), all_covars_pattern) %>% unlist() %>% unique()
-
-for (i in ind_missing) {
-  # Define later
+get_missing_covars <- function(X, i) {
   cols <- colnames(X)[is.na(X[i, ])]
   
-  missing_covar <- str_extract_all(cols, all_covars_pattern) %>% 
+  str_extract_all(cols, get_all_covar_patterns()) %>% 
     unlist() %>% 
     unique()
-  
-  all_missing_covar <- c(all_missing_covar, missing_covar) %>% unique()
-  
-  for (covar in missing_covar) {
-    # Get missing covariate levels
-    covar_levels <- levels(data[[covar]])
-    # Get columns where covariate is missing
-    col_missing <- which(colnames(X) %in%  str_c(covar, covar_levels[-1]))
-    X[i, col_missing] <- 0
-    missing_covar_levels[counter, col_missing] <- col_missing
-  }
-  counter <- counter + 1
 }
+
+make_covar_combs <- function(covar, data) {
+  map(covar, ~ levels(data[[.]])) %>% 
+    expand.grid() %>% 
+    as_tibble() %>% 
+    magrittr::set_colnames(covar)
+}
+
+# Attempt to do everything in one go
+X_missing_covar_combs <- map(ind_missing, function(i) {
+  miss <- get_missing_covars(X, i)
+  X_combs <- make_covar_combs(covar = miss, data = data)
+  
+  # Complete with data that is not missing
+  fake_data <- data %>% 
+    slice(i) %>% 
+    select(-one_of(miss)) %>% 
+    bind_cols(X_combs)
+  
+  model.matrix(eq, data = fake_data)
+})
+
+# Define the starts and ends of fake matrix
+X_comb_mat_sizes <- map_dbl(X_missing_covar_combs, nrow)
+missing_covar_starts <- c(1, cumsum(X_comb_mat_sizes[-length(X_comb_mat_sizes)]) + 1)
+missing_covar_ends <- cumsum(X_comb_mat_sizes)
+X_missing <- reduce(X_missing_covar_combs, rbind)
 
 # Prior is equal probability between classes. Can make this different later.
-p_missing_covar <- rep(0, ncol(X))
-
-for (covar in all_missing_covar) {
-  covar_levels <- levels(data[[covar]])
-  col_missing <- which(colnames(X) %in%  str_c(covar, covar_levels[-1]))
+prob_missing_covar_combs <- map(ind_missing, function(i) {
   
-  # Empirical counts
-  prop <- data %>% 
-    filter(!is.na(!!rlang::sym(covar))) %>% 
-    count(!!rlang::sym(covar)) %>% 
-    mutate(prop = n/sum(n)) %>% 
-    pull(prop)
+  miss <- get_missing_covars(X, i)
+  X_combs <- make_covar_combs(covar = miss, data = data)
   
-  if (length(prop) != (length(covar_levels) - 1)) {
-    p_missing_covar[col_missing] <- 1/(length(covar_levels))
-  } else {
-    p_missing_covar[col_missing] <- prop[-1]
+  # Keep only observed combinations
+  dat <- est_data
+  for (x in 1:length(miss)) {
+    dat <- filter(dat, !is.na(!!rlang::sym(miss[x])))
   }
-}
+  
+  prop <- X_combs %>% 
+    left_join(dat %>% 
+    count_(vars = miss) %>% 
+    mutate(prop = n/sum(n))) %>% 
+    replace_na(list(prop = 1e-2)) %>% 
+    mutate(prop = prop/sum(prop))
+  
+  prop
+})
 
+p_missing_covar <- prob_missing_covar_combs %>% 
+  map(~ .$prop) %>% 
+  unlist()
 
+X[is.na(X)] <- 0
 
 # Maps --------------------------------------------------------------------
 
@@ -155,9 +182,12 @@ stan_data <- list(
   L = length(u_uncertainty),
   N_full = length(ind_full),
   N_missing = length(ind_missing),
+  M = nrow(X_missing),
   ind_full = ind_full,
   ind_missing = ind_missing,
-  missing_covar_levels = missing_covar_levels,
+  X_missing = X_missing,
+  missing_covar_starts = missing_covar_starts,
+  missing_covar_ends = missing_covar_ends,
   p_missing_covar = p_missing_covar,
   map_to_study = map_to_study,
   map_to_weight = map_to_weight
@@ -165,7 +195,8 @@ stan_data <- list(
 
 # Save
 saveRDS(list(data = data,
-             all_covars = all_covars,
              X = X, 
+             X = X_missing,
+             all_covars = all_covars,
              stan_data = stan_data),
         file = make_stan_data_filename(effect = opt$effect, exposure = opt$exp_class))

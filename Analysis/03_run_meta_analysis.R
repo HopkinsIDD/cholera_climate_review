@@ -12,9 +12,9 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-e", "--effect"), 
-              default = "corr", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
-              default = "precipitation", action ="store", type = "character", help = "Make intermediate plots.")
+              default = "flood", action ="store", type = "character", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -26,7 +26,11 @@ stan_data <- readRDS(make_stan_data_filename(effect = opt$effect, exposure = opt
 
 # Compile and run stan model ----------------------------------------------
 
-stan_model <- cmdstan_model("Analysis/stan/correlation_meta_analysis_marginalize_weighted.stan")
+if (!str_detect(opt$effect, "direction")) {
+  stan_model <- cmdstan_model("Analysis/stan/effect_meta_analysis_marginalize_weighted.stan")
+} else {
+  stan_model <- cmdstan_model("Analysis/stan/direction_meta_analysis_marginalize_weighted.stan")
+}
 
 stan_fit <-  stan_model$sample(
   data = stan_data$stan_data,

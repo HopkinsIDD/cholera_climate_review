@@ -6,47 +6,41 @@
 library(tidyverse)
 library(cmdstanr)
 
+source("Analysis/utils.R")
 
 # Load results ------------------------------------------------------------
 
 res_files <- dir("generated_data/", pattern = "stan_output", full.names = T)
 
-effect_sizes <- map_df(res_files, function(x) {
-  stan_fit <- readRDS(x)
-  effect <- str_extract(x, get_all_effects() %>% str_c(collapse = "|"))
-  exp_class <- str_extract(x, get_all_exp_class() %>% str_c(collapse = "|"))
-  stan_data <- readRDS(make_stan_data_filename(effect = effect, exposure = exp_class))
+es_effect <- get_effect_sizes(str_subset(res_files, "direction", negate = T))
+es_direction <- get_effect_sizes(str_subset(res_files, "direction"))
+
+plot_effect_sizes <- function(df) {
+  pd <- position_dodge(width = .3)
   
-  stan_fit$summary("beta") %>%
-    mutate(var = colnames(stan_data$X),
-           what = str_extract(var, get_all_covar_patterns()),
-           strata = str_remove(var, what),
-           strata = factor(strata, levels = unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]]))))) %>%
-    filter(!is.na(what)) %>% 
-    mutate(what = map_chr(what, function(x) {
-      ref <- levels(data[[x]])[1]
-      str_c(x, "\nref:", ref)
-    })) %>% 
-    select(what, strata, mean, q5, q95) %>% 
-    mutate(effect = effect,
-           exp_class = exp_class)
-})
+  df %>%  
+    filter(effect != "diff") %>%
+    ggplot(aes(x = strata, y = mean)) +
+    geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
+    geom_point(aes(color = effect), position = pd) +
+    geom_errorbar(aes(ymin = q5, ymax = q95, color = effect), 
+                  position = pd, width = 0) +
+    facet_grid(exp_class ~ what, scales = "free", space = "free") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    # scale_color_manual(values = c("blue", "red")) +
+    ggthemes::scale_color_few("Dark") +
+    labs(y = "effect size")
+}
 
 
-pd <- position_dodge(width = .2)
-p_effects <- effect_sizes %>%  
-  filter(effect != "diff") %>%
-  ggplot(aes(x = strata, y = mean)) +
-  geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
-  geom_point(aes(color = effect), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = effect), 
-                position = pd, width = 0) +
-  facet_grid(exp_class ~ what, scales = "free", space = "free") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
-  ggthemes::scale_color_few("Dark") +
-  labs(y = "effect size")
-
+p_effects <- plot_effect_sizes(es_effect)
 
 ggsave(p_effects, filename = "figures/meta_analysis_effect_sizes.png",
+       width = 12, height = 6, dpi = 300)
+
+p_dir <- plot_effect_sizes(es_direction) +
+  scale_color_manual(values = c("blue", "red"))
+
+ggsave(p_dir, filename = "figures/meta_analysis_effect_sizes_direction.png",
        width = 12, height = 6, dpi = 300)

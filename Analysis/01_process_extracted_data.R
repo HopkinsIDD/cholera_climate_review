@@ -82,7 +82,7 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
 
 
 # Save
-saveRDS(est_data, file = "generated_data/estimate_timings.rds")
+saveRDS(est_data, file = "generated_data/processed_estimate_data.rds")
 
 # Metadata
 meta_data <- readxl::read_excel(dat_path, sheet = "metadata_0329") %>% 
@@ -105,7 +105,6 @@ est_timings <- est_data %>%
 
 # Save
 saveRDS(est_timings, file = "generated_data/paper_timings.rds")
-
 
 
 if (opt$do_plots) {
