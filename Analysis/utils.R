@@ -166,7 +166,7 @@ get_all_covar_patterns <- function() {
 }
 
 get_all_effects <- function() {
-  c("corr", "diff", "ratio")
+  c("corr", "diff", "ratio", "direction_positive", "direction_negative")
 }
 
 get_all_exp_class <- function() {
@@ -353,4 +353,33 @@ make_output_filename <- function(effect, exposure) {
 
 make_stan_data_filename <- function(effect, exposure) {
   str_glue("generated_data/stan_data_{effect}_{exposure}.rds")
+}
+
+
+
+# Post-processing ---------------------------------------------------------
+
+
+get_effect_sizes <- function(res_files) {
+  map_df(res_files, function(x) {
+    stan_fit <- readRDS(x)
+    effect <- str_extract(x, get_all_effects() %>% str_c(collapse = "|"))
+    exp_class <- str_extract(x, get_all_exp_class() %>% str_c(collapse = "|"))
+    stan_data <- readRDS(make_stan_data_filename(effect = effect, exposure = exp_class))
+    strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
+    
+    stan_fit$summary("beta") %>%
+      mutate(var = colnames(stan_data$X),
+             what = str_extract(var, get_all_covar_patterns()),
+             strata = str_remove(var, what),
+             strata = factor(strata, levels = strata_levels)) %>%
+      filter(!is.na(what)) %>% 
+      mutate(what = map_chr(what, function(w) {
+        ref <- levels(stan_data$data[[w]])[1]
+        str_c(w, "\nref:", ref)
+      })) %>% 
+      select(what, strata, mean, q5, q95) %>% 
+      mutate(effect = effect,
+             exp_class = exp_class)
+  })
 }
