@@ -15,7 +15,7 @@ library(patchwork)
 ```
 
 ```{r Load extracted data with shapefiles, echo=FALSE}
-data <- read.csv("cholera_climate_systematic_review_extract_into_sheets_shps.csv") %>% 
+data <- read.csv("cholera_climate_review/Data/cholera_climate_systematic_review_extract_into_sheets_shps.csv") %>% 
   select(studykey,eff_admin,new_location_period_id)
 shps <- readRDS("cholera_climate_review/Data/shapefiles/location_shapefiles.rds")
 data_shp <- data %>% 
@@ -176,65 +176,6 @@ plots <- lapply(facet_ids, function(facet_id) {
   # Filter data for the current facet
   subset_data <- data_shp %>%
     filter(eff_admin == "adm3", new_location_period_id == facet_id)
-  
-  # Calculate bounding box
-  bbox <- st_bbox(subset_data)
-  
-  # Create the plot for this facet
-  ggplot() +
-    geom_sf(data = subset_data, color = "black", fill = "lightblue", size = 0.1) +
-    coord_sf(
-      xlim = c(bbox["xmin"], bbox["xmax"]),
-      ylim = c(bbox["ymin"], bbox["ymax"]),
-      expand = FALSE
-    ) +
-    theme_minimal() +
-    labs(
-      title = facet_id
-    ) +
-    theme(
-      strip.text = element_text(size = 12, face = "bold"),
-      axis.text = element_blank(),
-      axis.ticks = element_blank()
-    )
-})
-
-# Print all plots
-# Assuming 'plots' is a list of ggplot objects
-# Arrange the plots in a 4-column layout
-arranged_plots <- wrap_plots(plots, ncol = 6)
-
-# Display the arranged plots
-print(arranged_plots)
-```
-
-## admin4
-```{r admin4 shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
-ggplot2::ggplot() +
-  geom_sf(data = data_shp %>% filter(eff_admin == "adm4"),color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
-  facet_wrap(~ new_location_period_id , ncol = 3) +                              # Facet by admin levels
-  theme_minimal() +                                          # Clean theme for better visuals
-  labs(
-    title = "Spatial Distribution of admin4 units"
-  ) +
-  theme(
-    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
-    axis.text = element_blank(),                           # Remove axis text
-    axis.ticks = element_blank()                           # Remove axis ticks
-  )
-
-```
-
-```{r zoomed in admin4 shapefiles, echo=FALSE,fig.height= 8,fig.width=8}
-
-# Get unique facet IDs
-facet_ids <- unique(data_shp[data_shp$eff_admin=="adm4",]$new_location_period_id)
-
-# Loop through each facet and create a plot
-plots <- lapply(facet_ids, function(facet_id) {
-  # Filter data for the current facet
-  subset_data <- data_shp %>%
-    filter(eff_admin == "adm4", new_location_period_id == facet_id)
   
   # Calculate bounding box
   bbox <- st_bbox(subset_data)
