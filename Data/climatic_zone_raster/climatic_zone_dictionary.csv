@@ -1,0 +1,12 @@
+﻿climatic_zone,climatic_zone_idx
+"Tropical, rainforest",1
+"Tropical, monsoon",2
+"Tropical, savannah",3
+"Arid, desert, hot",4
+"Arid, desert, cold",5
+"Arid, steppe, hot",6
+"Temperate, dry summer, warm summer",9
+"Temperate, dry winter, hot summer",11
+"Temperate, dry winter, warm summer",12
+"Temperate, no dry season, hot summer",14
+"Polar, tundra",29
