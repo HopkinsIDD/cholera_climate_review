@@ -1,65 +1,172 @@
+# Load relevant R packages ----
 library(sf)
 library(dplyr)
 library(terra)
 library(ggplot2)
+library(osmdata)
+library(patchwork)
 sf::sf_use_s2(FALSE)
-# Load extracted data
-extracted_data <- read.csv("Data/cholera_climate_systematic_review_extract_into_sheets_shps.csv")
 
-# Load raster and convert to polygons
+# Extracted data ----
+extracted_data <- read.csv("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets_shps.csv")
+
+# Climatic zone ----
+## Load raster and convert to polygons
 climatic_zones_raster <- terra::rast("Data/climatic_zone_raster/koppen_geiger_0p00833333.tif")
 climatic_zones_sf <- sf::st_as_sf(terra::as.polygons(climatic_zones_raster))
 
-# Load shapefile and prepare for join
-climatic_shp <- readRDS("Data/shapefiles/location_shapefiles.rds")
-climatic_shp <- climatic_shp %>% mutate(lctn_pr = as.character(lctn_pr))
+## Load shapefile and prepare for join
+climatic_shp <- readRDS("Data/shapefiles/location_shapefiles.rds") %>% 
+  dplyr::mutate(lctn_pr = as.character(lctn_pr))
 
-# Estimate the intersections between shapefiles and climatic zone shapefiles
-#for (lp_idx in unique(extracted_data)) {
-#  
-#  shp_tmp <- climatic_shp[climatic_shp$lctn_pr == lp_idx,]$geometry
-#  
-#  # estimate the intersections
-#  intersections_tmp <- sf::st_intersection(climatic_zones_sf, shp_tmp) %>% 
-#    mutate(lctn_pr = lp_idx)
-#  
-#  intersections <- rbind(intersections, intersections_tmp)
-#  
-#}
+## Perform spatial intersection
+### Estimate the intersections between shapefiles and climatic zone shapefiles (only need to run one time)
+if(!file.exists("Data/shapefiles/intersected_shp.rds")){
+  for (lp_idx in unique(extracted_data)) {
+    
+    shp_tmp <- climatic_shp[climatic_shp$lctn_pr == lp_idx,]$geometry
+    
+    # estimate the intersections
+    intersections_tmp <- sf::st_intersection(climatic_zones_sf, shp_tmp) %>%
+      dplyr::mutate(lctn_pr = lp_idx)
+    
+    intersections <- dplyr::bind_rows(intersections, intersections_tmp)
+    
+  }
+  saveRDS(intersections, "Data/shapefiles/intersected_shp.rds")
+}
 
-#saveRDS(intersections, "Data/shapefiles/intersected_shp.rds")
-
-# Load climatic zone dictionary
+## Load climatic zone dictionary
 climatic_zone_dic <- read.csv("Data/climatic_zone_raster/climatic_zone_dictionary.csv")
 
-# Perform spatial intersection
+## Subset the largest intersected areas for each location period id
 largest_intersections <- readRDS("Data/shapefiles/intersected_shp.rds") %>% 
-  mutate(intersected_area = sf::st_area(geometry)) %>%
-  group_by(lctn_pr) %>%
-  filter(intersected_area == max(intersected_area, na.rm = TRUE)) %>%
-  ungroup() %>% 
-  left_join(climatic_zone_dic, by =c("koppen_geiger_0p00833333"="climatic_zone_idx")) 
+  dplyr::mutate(intersected_area = sf::st_area(geometry)) %>%
+  dplyr::group_by(lctn_pr) %>%
+  dplyr::filter(intersected_area == max(intersected_area, na.rm = TRUE)) %>%
+  dplyr::ungroup() %>% 
+  dplyr::left_join(climatic_zone_dic, by =c("koppen_geiger_0p00833333"="climatic_zone_idx")) 
 
-
-# Select the relevant columns
-result <- largest_intersections %>%
-  select(lctn_pr, climatic_zone) %>% 
+## Select the relevant columns
+result_climate <- largest_intersections %>%
+  dplyr::select(lctn_pr, new_climatic_zone) %>% 
   as.data.frame() %>% 
-  select(!geometry) %>% 
-  right_join(extracted_data, by = c("lctn_pr" = "location_period_id")) %>% 
-  left_join(climatic_shp, by = "lctn_pr") %>% 
-  mutate(climatic_zone = as.factor(climatic_zone)) %>% 
-  st_as_sf()
+  dplyr::select(!geometry) %>% 
+  dplyr::right_join(extracted_data, by = c("lctn_pr" = "location_period_id")) %>% 
+  dplyr::left_join(climatic_shp, by = "lctn_pr") %>% 
+  dplyr::mutate(new_climatic_zone = as.factor(new_climatic_zone)) %>% 
+  sf::st_as_sf()
 
+## Remove geometry of export_result
+export_result <- result_climate %>% 
+  sf::st_drop_geometry() 
 
-# Load country shapefiles
-country_shp <- readRDS("Data/shapefiles/country_shapefiles.rds")
+# Inland and Costcal ----
+total_shp<-readRDS("Data/shapefiles/location_shapefiles.rds")
 
-# plot
-p_climatic_zone <- ggplot() +
-  geom_sf(data=result, aes(fill = climatic_zone),alpha = 0.3) +
-  geom_sf(data=country_shp,alpha=0) +
-  facet_wrap(~eff_admin, ncol = 2) +
-  theme_minimal() 
+## Coastlines data downloaded
+coastlines <- sf::st_read("Data/inland_coast/coastlines-split-4326/lines.shp")
+#https://osmdata.openstreetmap.de/data/coastlines.html
 
-ggsave("Analysis/Figures/climatic_zone_by_admin_new.png", plot = p_climatic_zone, width = 8, height = 6, dpi = 300)
+## Query coastline data
+identify_dist_to_water <- function(shp,dist_threshold = 10^5){
+
+  coast <- tryCatch(
+    {
+      osmdata::opq(bbox = sf::st_bbox(shp)) %>%
+      osmdata::add_osm_feature(key = "natural", value = "coastline") %>%
+      osmdata::osmdata_sf()
+    },
+    error = function(e) {
+      cat("Primary query failed",e$message,"\n")
+      tryCatch(
+        {
+          sf::st_crop(coastlines,sf::st_bbox(shp))
+        }
+      )
+    }
+  )
+
+  if(is.null(coast$osm_lines) & any(names(coast) == "osm_multilines")){
+    
+    type = "Inland" # not even close to the coast
+    
+  } else{
+    if(!is.null(coast$osm_lines)){
+      coast_sf <- coast$osm_lines
+    } else {
+      coast_sf <- coast
+    }
+    
+    # Set the crs consistent between the coast line and shapefile
+    shp <- sf::st_transform(shp %>% sf::st_make_valid(), crs = sf::st_crs(coast_sf))
+    
+    # Find the cloest coast line point near the shp
+    nearest_coastline_segment <- sf::st_nearest_feature(shp, coast_sf)
+    
+    # Calculate distances to the closest coastline segment
+    distances_nearest <- sf::st_distance(shp, coast_sf[nearest_coastline_segment, ])
+    
+    if (as.numeric(distances_nearest) < dist_threshold) {
+      
+      type <- "Coastal"
+      
+    } else {
+      
+      type <- "Inland"
+      
+    }
+  }
+  
+  return(type)
+}
+
+## Estimate the distance to water and decide whether it's inland or costcal
+if(!file.exists("Data/inland_coast/dist_to_water_results.rds")){
+  dist_to_water_results <- purrr::map(total_shp$geometry, function(geom) {
+    single_sf <- sf::st_sf(geometry = sf::st_sfc(geom))
+    sf::st_crs(single_sf) <- 4326
+    identify_dist_to_water(single_sf)
+  })
+  saveRDS(dist_to_water_results,"Data/inland_coast/dist_to_water_results.rds")  
+}
+
+total_shp$inland_coast <- dist_to_water_results
+
+## Perform the left join to add the inland_coast column
+export_result <- export_result %>%
+  dplyr::left_join(total_shp[, c("lctn_pr", "inland_coast")] %>% sf::st_drop_geometry(), by = "lctn_pr")
+
+# GDP/hdi economic indicator (WASH/access to health) ----
+hdi_raster <- raster::raster("Data/hdi_raster/Sub_National_HDI.tif")
+
+## Extract the average Sub_National_HDI for each polygon in total_shp
+result_hdi <- exactextractr::exact_extract(hdi_raster, total_shp, fun = "mean", append_cols = TRUE)
+
+## Join the hdi result to exported data
+export_result <- export_result %>% 
+  dplyr::left_join(result_hdi,by="lctn_pr") %>% 
+  dplyr::rename(average_hdi = mean)
+
+# Create a new adm level categorization: national, supranational and subnational ----
+extracted_data <-export_result %>% 
+  dplyr::mutate(hdi_cat = ifelse(average_hdi < 0.55, "low hdi", 
+                                 ifelse(average_hdi < 0.7, "medium hdi", 
+                                        ifelse(average_hdi < 0.8, "high hdi", "very high hdi")))) %>% 
+  dplyr::mutate(hdi_cat = factor(hdi_cat, levels = c("low hdi", "medium hdi", "high hdi", "very high hdi"))) %>% 
+  dplyr::mutate(
+    new_admin = case_when(
+      eff_admin == "non-adm geography" & stringr::str_detect(eff_loc, "multihospitals|multiprovince|multidistrict|regions|multiregion|Unguja|Pemba neighborhoods\\(shehias\\)|multi health districts|multicommune|Lokoja|CMCH|bengal delta region") & 
+        !(eff_country %in% c("IND", "PAK") & eff_loc == "multiregion") ~ "subnational",
+      studykey == "Ruiz-Moreno2007" ~ "subnational",
+      eff_admin %in% c("adm1", "adm2", "adm3") ~ "subnational",
+      eff_admin == "adm0" ~ "national",
+      eff_admin == "non-adm geography" & eff_loc == "bengal delta region" ~ "subnational",
+      eff_country == "HTI" & eff_admin == "non-adm geography" ~ "subnational",
+      eff_country == "NGA" & eff_loc == "multistate",
+      studykey == "Oloukoi2014" ~ "subnational",
+      eff_country == "IND|PAK" & studykey == "Jutla2013" ~ "supranational",
+      TRUE ~ "supranational"
+    )
+  )
+#write.csv(extracted_data,"Data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names=F)
