@@ -170,3 +170,106 @@ extracted_data <-export_result %>%
     )
   )
 #write.csv(extracted_data,"Data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names=F)
+
+# Processed extracted data ----
+processed_extracted_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
+  filter(new_admin != "supranational") %>% 
+  rowwise() %>% 
+  mutate(
+    year_tl = ifelse(nchar(eff_tl) == 5, as.numeric(lubridate::year(as.Date(as.numeric(eff_tl),origin="1899-12-30"))), as.numeric(substr(eff_tl,1,4))),
+    year_tr = ifelse(nchar(eff_tr) == 5, as.numeric(lubridate::year(as.Date(as.numeric(eff_tr),origin="1899-12-30"))), as.numeric(substr(eff_tr,1,4)))
+  )
+
+
+check_study_year <- processed_extracted_data %>% distinct(studykey,year_tl,year_tr)
+
+# Endemic and epidemic ----
+## Extract all the countries ----
+unique_countries <- processed_extracted_data %>%
+  pull(eff_country) %>% 
+  stringr::str_split("\\|") %>%      
+  unlist() %>% 
+  unique() %>% 
+  sort()
+
+## psql code to pull WHO annual report data for these countries ----
+### \copy (select time_left,time_right,suspected_cases,deaths,location_id from observations where (observation_collection_id <=480) and (observation_collection_id>=300) or (observation_collection_id=620)) to '/home/qulu/who_annual_report.csv' (format csv, delimiter ';');
+
+report<-read.csv("Data/endemicity/who_annual_report.csv") %>% 
+  tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id'),sep = ';',remove=T)
+loc<-read.csv("Data/endemicity/country_location_id_name.csv")
+
+report<-merge(report,loc,by.x="location_id",by.y="id",all.x=TRUE) %>% 
+  filter(is.na(region)==F) # two OCs are not at the country-level between 300-480
+
+# Assuming obs has columns: time_left, time_right, suspected_cases, spatial_scale, country
+# Create a new column for the midpoint of time
+report$time <- (lubridate::ymd(report$time_right) -lubridate::ymd(report$time_left)) / 2 + lubridate::ymd(report$time_left)
+report<-report%>% arrange(region)%>%mutate(region = as.factor(region),suspected_cases=as.numeric(suspected_cases))
+
+# Split composite country codes into separate rows
+processed_extracted_data <- processed_extracted_data %>%
+  tidyr::separate_rows(eff_country, sep = "\\|")
+
+# Convert year_tl and year_tr to Date format
+processed_extracted_data <- processed_extracted_data %>%
+  mutate(year_tl = lubridate::ymd(paste0(year_tl, "-01-01")),
+         year_tr = lubridate::ymd(paste0(year_tr, "-12-31")))
+
+# Merge region information with study period data
+processed_extracted_data <- processed_extracted_data %>%
+  left_join(report %>% select(region) %>% distinct(), by = c("eff_country" = "region")) %>% 
+  mutate(eff_country = as.factor(eff_country))
+
+report <- report %>% 
+  filter(region %in% processed_extracted_data$eff_country) %>% 
+  mutate(region = factor(region,levels = levels(processed_extracted_data$eff_country)))
+
+country_positions <- as.numeric(as.factor(report$region))
+
+# Identify countries whose study period TL is earlier than the earliest reported WHO cases
+## Identify the earliest available data per country
+earliest_data <- report %>%
+  group_by(region) %>%
+  summarise(earliest_year = min(time_left, na.rm = TRUE))
+
+# Merge with processed_extracted_data to compare TL with earliest available data
+processed_extracted_data <- processed_extracted_data %>%
+  left_join(earliest_data, by = c("eff_country" = "region")) %>%
+  mutate(border_color = ifelse(year_tl < earliest_year, "Before the earliest WHO report", "black"))  # Differentiate border color
+
+# Plot with study period highlighted
+p <- ggplot() +
+  geom_rect(data=report %>% mutate(suspected_cases = round(suspected_cases,0)),
+            aes(y = region, fill = suspected_cases,
+                xmin = lubridate::ymd(time_left), xmax = lubridate::ymd(time_right), 
+                ymin = as.numeric(as.factor(region)) - 0.5, 
+                ymax = as.numeric(as.factor(region)) + 0.5)) +
+  scale_fill_viridis_c(option = "D", trans = "log",
+                       breaks = c(1, 10, 100, 1000, 10000,100000),  # Adjust breaks
+                       labels = c("1", "10", "100", "1000", "10000","100000")) +  # Viridis color scale with log transformation
+  labs(
+    x = "Time Interval",
+    y = "Country",
+    fill ="Annual Cases",
+    title = "Heatmap of WHO Reported Cases by Time Interval and Country"
+  ) +
+  scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "5 year") +  # Format x-axis labels
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
+    panel.grid = element_blank()
+    ) +
+  # Add study period highlighting per country
+  geom_rect(data = processed_extracted_data %>% distinct(year_tl, year_tr, eff_country, border_color), 
+            aes(xmin = year_tl, xmax = year_tr, 
+                ymin = as.numeric(as.factor(eff_country)) - 0.5, 
+                ymax = as.numeric(as.factor(eff_country)) + 0.5, 
+                color = border_color),  # Dynamic border color
+            fill = "#FFA500",
+            alpha = 0.4) +  
+  scale_color_identity(guide = "legend", name = "Study Period", labels = c("After earliest WHO report","Before earliest WHO report")) + 
+  geom_hline(yintercept = country_positions, color = "black", linetype = "dotted", alpha = 0.5)
+p
+
+ggplot2::ggsave("Analysis/Figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)

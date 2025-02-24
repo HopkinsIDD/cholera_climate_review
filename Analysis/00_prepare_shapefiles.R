@@ -643,3 +643,12 @@ final_climate_shp21 <- rbind(final_climate_shp20,afr_shp)
 #saveRDS(final_climate_shp21,"climate_unique_shp21.rds")
 
 # Rename climate_unique_shp21 to location_shapefiles.rds in Data/shapefiles folder in cholera_climate_review Github repo. ----
+# HTI: Artibonite
+hti_Artibonite <- rgeoboundaries::gb_adm1("HTI") %>% 
+  filter(shapeName == "Artibonite Department") %>% 
+  select(geometry) %>% 
+  mutate(
+    lctn_pr = "new-47"
+  )
+total_shps <- rbind(total_shps,hti_Artibonite)
+#saveRDS(total_shps,"C:/Users/zheng/Cholera/cholera_climate_review/Data/shapefiles/location_shapefiles.rds")
