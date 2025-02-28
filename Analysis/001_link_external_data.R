@@ -64,7 +64,7 @@ export_result <- result_climate %>%
 # Inland and Costcal ----
 total_shp<-readRDS("Data/shapefiles/location_shapefiles.rds")
 
-## Coastlines data downloaded
+## Historical coastlines data downloaded
 coastlines <- sf::st_read("Data/inland_coast/coastlines-split-4326/lines.shp")
 #https://osmdata.openstreetmap.de/data/coastlines.html
 
@@ -108,16 +108,11 @@ identify_dist_to_water <- function(shp,dist_threshold = 10^5){
     distances_nearest <- sf::st_distance(shp, coast_sf[nearest_coastline_segment, ])
     
     if (as.numeric(distances_nearest) < dist_threshold) {
-      
       type <- "Coastal"
-      
     } else {
-      
       type <- "Inland"
-      
     }
   }
-  
   return(type)
 }
 
@@ -137,7 +132,7 @@ total_shp$inland_coast <- dist_to_water_results
 export_result <- export_result %>%
   dplyr::left_join(total_shp[, c("lctn_pr", "inland_coast")] %>% sf::st_drop_geometry(), by = "lctn_pr")
 
-# GDP/hdi economic indicator (WASH/access to health) ----
+# HDI ----
 hdi_raster <- raster::raster("Data/hdi_raster/Sub_National_HDI.tif")
 
 ## Extract the average Sub_National_HDI for each polygon in total_shp
@@ -148,7 +143,7 @@ export_result <- export_result %>%
   dplyr::left_join(result_hdi,by="lctn_pr") %>% 
   dplyr::rename(average_hdi = mean)
 
-# Create a new adm level categorization: national, supranational and subnational ----
+# A new spatial scale categorization: national, supranational and subnational ----
 extracted_data <-export_result %>% 
   dplyr::mutate(hdi_cat = ifelse(average_hdi < 0.55, "low hdi", 
                                  ifelse(average_hdi < 0.7, "medium hdi", 
@@ -171,7 +166,8 @@ extracted_data <-export_result %>%
   )
 #write.csv(extracted_data,"Data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names=F)
 
-# Processed extracted data ----
+# Endemicity ----
+## Processed extracted data ----
 processed_extracted_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
   filter(new_admin != "supranational") %>% 
   rowwise() %>% 
@@ -179,18 +175,6 @@ processed_extracted_data <- read.csv("Data/extracted_data/processed_cholera_clim
     year_tl = ifelse(nchar(eff_tl) == 5, as.numeric(lubridate::year(as.Date(as.numeric(eff_tl),origin="1899-12-30"))), as.numeric(substr(eff_tl,1,4))),
     year_tr = ifelse(nchar(eff_tr) == 5, as.numeric(lubridate::year(as.Date(as.numeric(eff_tr),origin="1899-12-30"))), as.numeric(substr(eff_tr,1,4)))
   )
-
-
-check_study_year <- processed_extracted_data %>% distinct(studykey,year_tl,year_tr)
-
-# Endemic and epidemic ----
-## Extract all the countries ----
-unique_countries <- processed_extracted_data %>%
-  pull(eff_country) %>% 
-  stringr::str_split("\\|") %>%      
-  unlist() %>% 
-  unique() %>% 
-  sort()
 
 ## psql code to pull WHO annual report data for these countries ----
 ### \copy (select time_left,time_right,suspected_cases,deaths,location_id from observations where (observation_collection_id <=480) and (observation_collection_id>=300) or (observation_collection_id=620)) to '/home/qulu/who_annual_report.csv' (format csv, delimiter ';');
@@ -202,21 +186,16 @@ loc<-read.csv("Data/endemicity/country_location_id_name.csv")
 report<-merge(report,loc,by.x="location_id",by.y="id",all.x=TRUE) %>% 
   filter(is.na(region)==F) # two OCs are not at the country-level between 300-480
 
-# Assuming obs has columns: time_left, time_right, suspected_cases, spatial_scale, country
-# Create a new column for the midpoint of time
+## Create a new column for the midpoint of time
 report$time <- (lubridate::ymd(report$time_right) -lubridate::ymd(report$time_left)) / 2 + lubridate::ymd(report$time_left)
 report<-report%>% arrange(region)%>%mutate(region = as.factor(region),suspected_cases=as.numeric(suspected_cases))
 
-# Split composite country codes into separate rows
-processed_extracted_data <- processed_extracted_data %>%
-  tidyr::separate_rows(eff_country, sep = "\\|")
-
-# Convert year_tl and year_tr to Date format
+## Convert year_tl and year_tr to Date format
 processed_extracted_data <- processed_extracted_data %>%
   mutate(year_tl = lubridate::ymd(paste0(year_tl, "-01-01")),
          year_tr = lubridate::ymd(paste0(year_tr, "-12-31")))
 
-# Merge region information with study period data
+## Merge region information with study period data
 processed_extracted_data <- processed_extracted_data %>%
   left_join(report %>% select(region) %>% distinct(), by = c("eff_country" = "region")) %>% 
   mutate(eff_country = as.factor(eff_country))
@@ -227,18 +206,17 @@ report <- report %>%
 
 country_positions <- as.numeric(as.factor(report$region))
 
-# Identify countries whose study period TL is earlier than the earliest reported WHO cases
-## Identify the earliest available data per country
+## Identify countries whose study period TL is earlier than the earliest reported WHO cases
 earliest_data <- report %>%
   group_by(region) %>%
   summarise(earliest_year = min(time_left, na.rm = TRUE))
 
-# Merge with processed_extracted_data to compare TL with earliest available data
+## Merge with processed_extracted_data to compare TL with earliest available data
 processed_extracted_data <- processed_extracted_data %>%
   left_join(earliest_data, by = c("eff_country" = "region")) %>%
-  mutate(border_color = ifelse(year_tl < earliest_year, "Before the earliest WHO report", "black"))  # Differentiate border color
+  mutate(border_color = ifelse(year_tl < earliest_year, "Before the earliest WHO report", "black"))
 
-# Plot with study period highlighted
+## Heatmap
 p <- ggplot() +
   geom_rect(data=report %>% mutate(suspected_cases = round(suspected_cases,0)),
             aes(y = region, fill = suspected_cases,
@@ -247,17 +225,17 @@ p <- ggplot() +
                 ymax = as.numeric(as.factor(region)) + 0.5)) +
   scale_fill_viridis_c(option = "D", trans = "log",
                        breaks = c(1, 10, 100, 1000, 10000,100000),  # Adjust breaks
-                       labels = c("1", "10", "100", "1000", "10000","100000")) +  # Viridis color scale with log transformation
+                       labels = c("1", "10", "100", "1000", "10000","100000")) +
   labs(
     x = "Time Interval",
     y = "Country",
     fill ="Annual Cases",
     title = "Heatmap of WHO Reported Cases by Time Interval and Country"
   ) +
-  scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "5 year") +  # Format x-axis labels
+  scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "5 year") +
   theme_bw() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
+    axis.text.x = element_text(angle = 45, hjust = 1),
     panel.grid = element_blank()
     ) +
   # Add study period highlighting per country
@@ -272,4 +250,75 @@ p <- ggplot() +
   geom_hline(yintercept = country_positions, color = "black", linetype = "dotted", alpha = 0.5)
 p
 
-ggplot2::ggsave("Analysis/Figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
+#ggplot2::ggsave("Analysis/Figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
+
+## Function to identify endemicity status of the country based on the years prior to study period ----
+
+#' @name identify_endemicity
+#' @export 
+#' @param processed_data extracted and processed data
+#' @param study_year_col the column name for the year of the study/estimate 
+#' @param study_country_col the column name for the country of the study/estimate 
+#' @param who_data WHO annual report data
+#' @param who_year_col the column name for the year of the WHO annual reports 
+#' @param who_country_col the column name for the country of the WHO annual reports
+#' @param who_case_col the colname name for the cases of the WHO annual reports
+#' @param prior_year_with_sCh the number of years with WHO reported cases before the study year used to define endemicity  
+#' @returns processed_data with a new column called endemicity with three levels: Endemic, Non-Endemic, and Unknown
+
+identify_endemicity <- function(
+    processed_data = processed_extracted_data[1,] %>%
+      mutate(year_tl = lubridate::ymd(year_tl)),
+    study_year_col = "year_tl",
+    study_country_col = "eff_country",
+    who_data = report %>% mutate(year = lubridate::year(time_left)),
+    who_year_col = "year",
+    who_country_col = "region",
+    who_case_col = "suspected_cases",
+    prior_year_with_sCh = 3
+) {
+  
+  library(dplyr)
+  library(tidyr)
+  
+  processed_data <- processed_data %>% 
+    mutate(!!study_year_col := as.numeric(!!sym(study_year_col)))
+  
+  processed_data <- processed_data %>%
+    rowwise() %>%
+    mutate(
+      endemicity_status = {
+        
+        study_year <- get(study_year_col)
+        study_country <- get(study_country_col)
+        
+        prior_years <- seq(study_year - prior_year_with_sCh, study_year - 1)
+        
+        # Create a full dataset of years and join with WHO data
+        full_years_df <- tibble(
+          !!who_year_col := prior_years,
+          !!who_country_col := study_country
+        )
+        
+        who_filtered <- full_years_df %>%
+          left_join(who_data, by = c(who_year_col, who_country_col))
+        
+        # Check if all years have NA (no reports at all)
+        if (all(is.na(who_filtered[[who_case_col]]))) {
+          status <- "Unknown"
+        } else {
+          # Replace NA with 0 if at least one year has a report
+          who_filtered[[who_case_col]][is.na(who_filtered[[who_case_col]])] <- 0
+          
+          reported_years <- sum(who_filtered[[who_case_col]] > 0)
+          
+          # Determine endemicity status
+          status <- ifelse(reported_years >= prior_year_with_sCh, "Endemic", "Non-Endemic")
+        }
+        status
+      }
+    ) %>%
+    ungroup()
+  
+  return(processed_data)
+}
