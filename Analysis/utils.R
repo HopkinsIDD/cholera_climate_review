@@ -76,16 +76,21 @@ count_countries <- function(df,
 #'
 #' @examples
 char_to_date <- function(x) {
-  out <- vector(length =  length(x))
   
+  out <- vector(length = length(x))
   for (i in 1:length(x)) {
-    if (!str_detect(x[i], "[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
-      out[i] <- as.Date(as.numeric(as.character(x[i])), origin = "1899-12-30") %>% as.character()
+    if (nchar(as.character(x[i])) == 5) {
+      out[i] <- as.character(as.Date(as.numeric(x[i]), origin = "1899-12-30"))
+    } else  if (nchar(as.character(x[i])) < 7) {
+      out[i] <- as.character(as.Date(x[i]))
     } else {
-      out[i] <- x[i] %>% str_replace_all("00", "01")
+      out[i] <- as.Date(x[i] %>% 
+                          str_replace_all("-00-", "-01-") %>% 
+                          str_replace_all("-00", "-01")) %>% 
+        as.character()
     }
   }
-  as.Date(out)
+  out
 }
 
 add_lag_class_def <- function(df) {
@@ -147,9 +152,15 @@ correct_effect <- function(df,
                            thresh = 0) {
   df %>% 
     mutate(a_effect_raw = a_effect,
-           a_effect = case_when(a_direction == "negative" & a_effect > thresh ~ - a_effect,
+           a_effect = case_when(a_direction == "negative" & a_effect > thresh ~ -a_effect,
                                 a_direction == "positive" & a_effect < thresh ~ -a_effect,
-                                T ~ a_effect))
+                                T ~ a_effect),
+           a_uncert_lb = case_when(a_direction == "negative" & a_effect_raw > thresh ~ -a_uncert_lb,
+                                   a_direction == "positive" & a_effect_raw < thresh ~ -a_uncert_lb,
+                                   T ~ a_uncert_lb),
+           a_uncert_ub = case_when(a_direction == "negative" & a_effect_raw > thresh ~ -a_uncert_ub,
+                                   a_direction == "positive" & a_effect_raw < thresh ~ -a_uncert_ub,
+                                   T ~ a_uncert_ub))
 }
 
 get_estimate_thresholds <- function() {
@@ -162,7 +173,7 @@ get_estimate_thresholds <- function() {
 }
 
 get_all_covar_patterns <- function() {
-  "continent|admin_level|full_score|lag_class|urban_rural_class|rainy_season"
+  "continent|admin_level|full_score|lag_class|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
 }
 
 get_all_effects <- function() {
@@ -341,7 +352,7 @@ z_transform <- function(x) {
 }
 
 inv_z_transform <- function(x) {
-  exp(2*x - 1)/exp(2*x + 1)
+  (exp(2*x) - 1)/(exp(2*x) + 1)
 }
 
 

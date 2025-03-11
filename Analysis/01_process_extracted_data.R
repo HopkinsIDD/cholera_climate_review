@@ -21,12 +21,13 @@ print(opt)
 
 # Load data ---------------------------------------------------------------
 
-dat_path <- here::here("Data/cholera_climate_systematic_review_extract_into_sheets.xlsx")
+dat_path <- here::here("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets.xlsx")
 
 # Load effect extraction data
-est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
+est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
+  read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
   # Fix dates
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.))) %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>% 
   # Unpack countries for multi-country studies
   mutate(country_list = map(eff_country, ~ str_split(., pattern = "\\|")[[1]])) %>% 
   # Fix estimates
@@ -39,18 +40,46 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
                              T ~ a_class))  %>%
   # Determine if effect is already on log scale (important for ratios)
   group_by(studykey, exp_class, a_raw) %>% 
-  mutate(a_effect_log_scale = case_when(a_class == "ratio" & any(a_effect < 0) ~ TRUE,
-                                        a_class == "ratio" & studykey == "Charnley2021" ~ TRUE,
-                                        a_class == "ratio" & studykey == "Yang2022" ~ TRUE,
-                                        TRUE ~ FALSE)) %>% 
+  # mutate(a_effect_log_scale = case_when(a_class == "ratio" & any(a_effect < 0) ~ TRUE,
+  #                                       a_class == "ratio" & studykey == "Charnley2021" ~ TRUE,
+  #                                       a_class == "ratio" & studykey == "Yang2022" ~ TRUE,
+  #                                       TRUE ~ FALSE)) %>% 
   ungroup() %>% 
   # Se ratio to log10 ratio for plots
-  mutate(a_effect = case_when(
-    # This is when the ratio is already on a log scale
-    a_class == "ratio" & a_effect_log_scale ~ log10(exp(a_effect)),
-    # This is when the ratio is already on a log scale
-    a_class == "ratio" ~ log10(a_effect),
-    TRUE ~ a_effect),
+  mutate(
+    a_effect_raw = a_effect,
+    a_effect_natural_scale = case_when(
+      # Update Feb 13 2025: We now have a column specifying the transformation to apply if any
+      a_transform == "exp" ~ exp(a_effect),
+      a_transform == "base10" ~ 10^a_effect,
+      TRUE ~ a_effect
+    ),
+    a_uncert_lb_natural_scale = case_when(
+      a_transform == "exp" ~ exp(a_uncert_lb),
+      a_transform == "base10" ~ 10^a_uncert_lb,
+      TRUE ~ a_uncert_lb
+    ),
+    a_uncert_ub_natural_scale = case_when(
+      a_transform == "exp" ~ exp(a_uncert_ub),
+      a_transform == "base10" ~ 10^a_uncert_ub,
+      TRUE ~ a_uncert_ub
+    ),
+    # Now apply log10 to ratios
+    a_effect = case_when(
+      a_class == "ratio" ~ log10(a_effect_natural_scale),
+      TRUE ~ a_effect_natural_scale
+    ),
+    # Now apply log10 to ratios
+    a_uncert_lb = case_when(
+      a_class == "ratio" ~ log10(a_uncert_lb_natural_scale),
+      TRUE ~ a_uncert_lb_natural_scale
+    ),
+    # Now apply log10 to ratios
+    a_uncert_ub = case_when(
+      a_class == "ratio" ~ log10(a_uncert_ub_natural_scale),
+      TRUE ~ a_uncert_ub_natural_scale
+    ),
+    # Update class to reflect change in ratios
     a_class = case_when(a_class == "ratio" ~ "log10_ratio",
                         TRUE ~ a_class)) %>% 
   # Levels
@@ -78,7 +107,10 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   mutate(continent = factor(continent)) %>% 
   mutate(a_uncert_significant = factor(a_uncert_significant, 
                                        levels = c("TRUE", "FALSE", "NA"),
-                                       labels = c("TRUE", "FALSE", "unspecified")))
+                                       labels = c("TRUE", "FALSE", "unspecified"))) %>% 
+  mutate(new_climatic_zone = factor(new_climatic_zone),
+         inland_coast = factor(inland_coast),
+         hdi_cat = factor(hdi_cat))
 
 
 # Save

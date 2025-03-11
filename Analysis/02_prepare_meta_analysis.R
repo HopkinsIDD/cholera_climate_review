@@ -11,7 +11,7 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-e", "--effect"), 
-              default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "corr", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
               default = "flood", action ="store", type = "character", help = "Make intermediate plots.")
 )
@@ -65,7 +65,8 @@ data <- data %>%
       is.na(urban_rural_class) & admin_level != "sub-national" ~ "mixed",
       T ~ urban_rural_class
     ),
-    urban_rural_class = factor(urban_rural_class, levels = c("rural", "mixed", "urban")))
+    urban_rural_class = factor(urban_rural_class, levels = c("rural", "mixed", "urban"))) %>% 
+  filter(admin_level %in% c("national", "sub-national"))
 
 if (nrow(data) == 0) {
   # https://stackoverflow.com/questions/17837289/break-exit-script
@@ -78,14 +79,16 @@ if (nrow(data) == 0) {
 # Covariate matrix --------------------------------------------------------
 
 options(na.action='na.pass')
-if (length(unique(data$full_score)) > 1) {
-  eq <- ~ continent + admin_level + full_score + lag_class + rainy_season + urban_rural_class
-} else {
-  eq <- ~ continent + admin_level + lag_class + rainy_season + urban_rural_class
-}
+# if (length(unique(data$full_score)) > 1) {
+#   eq <- ~ continent + admin_level + full_score + lag_class + rainy_season + urban_rural_class
+# } else {
+#   eq <- ~ continent + admin_level + lag_class + rainy_season + urban_rural_class
+# }
+
+eq <- ~ continent + lag_class + rainy_season + urban_rural_class + new_climatic_zone + hdi_cat + inland_coast
 
 # Parse the list of covariates used to save
-all_covars <-  as.character(eq)[2] %>% 
+all_covars <- as.character(eq)[2] %>% 
   str_remove('~') %>% 
   str_split("\\+") %>% 
   .[[1]] %>% 
@@ -148,8 +151,8 @@ prob_missing_covar_combs <- map(ind_missing, function(i) {
   
   prop <- X_combs %>% 
     left_join(dat %>% 
-    count_(vars = miss) %>% 
-    mutate(prop = n/sum(n))) %>% 
+                count_(vars = miss) %>% 
+                mutate(prop = n/sum(n))) %>% 
     replace_na(list(prop = 1e-2)) %>% 
     mutate(prop = prop/sum(prop))
   
@@ -167,6 +170,7 @@ X[is.na(X)] <- 0
 u_studies <- data$studykey %>% unique() %>% sort()
 map_to_study <- map_dbl(data$studykey, ~ which(u_studies == .))
 
+data$a_uncert_significant[is.na(data$a_uncert_significant)] <- FALSE
 u_uncertainty <- unique(data$a_uncert_significant) %>% sort()
 map_to_weight <- map_dbl(data$a_uncert_significant, ~ which(u_uncertainty == .))
 
