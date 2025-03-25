@@ -1,0 +1,611 @@
+---
+title: "External data report"
+author: "Qulu Zheng"
+date: "2025-01-16"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, echo=TRUE, include =FALSE}
+library(sf)
+library(dplyr)
+library(ggplot2)
+sf::sf_use_s2(FALSE)
+```
+
+```{r Procssed extracted data, include=FALSE}
+extracted_data <- read.csv("Data/extracted_data/final_processed_cholera_climate_systematic_review_extract_into_sheets.csv")
+```
+
+```{r Shapefiles, include=FALSE}
+## Location shapefiles ----
+total_shps <- readRDS("Data/shapefiles/location_shapefiles.rds")
+## Country shapefiles ----
+country_shps <- readRDS("Data/shapefiles/country_shapefiles.rds")
+```
+
+```{r Plotting functions,include=FALSE}
+# Spatial distribution ----
+# Function to plot the shapefiles with spatial distribution of extracted data
+plot_shapefiles_spatial <- function(extracted_data, total_shps, country_shps) {
+  # Merge extracted_data with shapefiles using the 'lctn_pr' column
+  merged_data <- dplyr::left_join(total_shps, extracted_data %>% distinct(lctn_pr,eff_admin), by = "lctn_pr") %>% 
+    mutate(
+      eff_admin = factor(eff_admin,levels = c("non-adm geography", "adm0", "adm1", "adm2", "adm3")),
+       admin_alpha = ifelse(
+      eff_admin == "non-adm geography", 0.2,
+      ifelse(
+        eff_admin == "adm0", 0.4, 
+        ifelse(
+          eff_admin == "adm1", 0.6,
+          ifelse(
+            eff_admin == "adm2", 0.8,1
+          )
+        )
+      )
+    )
+)
+
+colors_admin_levels <- function(){RColorBrewer::brewer.pal(n=5,name = 'Blues')}
+
+p<-ggplot(data = merged_data %>% mutate(admin_alpha = as.numeric(admin_alpha))) +
+     geom_sf(aes(fill = eff_admin), color = "black") + # Single layer with fill by eff_admin
+     # Set fill colors
+     scale_fill_manual(values = colors_admin_levels(), name = "Admin Level") + 
+     ggplot2::geom_sf(data = country_shps, fill = NA, alpha = 0) + 
+     # Additional plot aesthetics
+     theme_bw() +
+     theme(legend.position = "right") +
+     labs(title = "Spatial Distribution of Extracted Data")
+
+  # Save the plot
+  ggplot2::ggsave("Analysis/Figures/spatial distribution.png", plot = p)
+  
+  print(p)
+  return(NULL)
+}
+
+# Function to plot shapefiles filled by number of papers/estimates
+plot_shapefiles_by_paper_est_count <- function(extracted_data, total_shps, country_shps) {
+  
+  library(dplyr)
+  # Count the number of papers/estimates per location
+  location_count <- dplyr::group_by(extracted_data, lctn_pr, eff_admin) %>%
+    dplyr::summarise(est_count = dplyr::n(),
+                     paper_count = length(unique(studykey)))
+  
+  # Merge extracted_data with shapefiles using the 'lctn_pr' column
+  merged_data <- dplyr::left_join(total_shps, location_count, by = "lctn_pr") %>% 
+    dplyr::mutate(
+      est_count_cat = ifelse(est_count>2,"<=2 estimates",">2 estimates"),
+      paper_count_cat = ifelse(paper_count>1,"1 paper",">1 papers")
+    )
+  
+  # Plot shapefiles filled by the number of papers/estimates
+  p1 <- ggplot2::ggplot() +
+    ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = paper_count_cat), color = "black",alpha = 0.3) +
+    ggplot2::geom_sf(data = country_shps, fill = NA, alpha = 0) +
+    ggplot2::scale_fill_manual(values = c("skyblue","orange")) + 
+    ggplot2::theme_bw() + 
+    ggplot2::facet_wrap(~eff_admin) + 
+    ggplot2::ggtitle("Shapefiles: Fill by Number of Papers")
+  
+  p2 <- ggplot2::ggplot() +
+    ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = est_count_cat), color = "black", alpha = 0.3) +
+    ggplot2::geom_sf(data = country_shps, fill = NA, alpha = 0) +
+    ggplot2::scale_fill_manual(values = c("skyblue","orange")) + 
+    ggplot2::theme_bw() + 
+    ggplot2::facet_wrap(~eff_admin) + 
+    ggplot2::ggtitle("Shapefiles: Fill by Number of Estimates")
+  
+  # Save the plot
+  ggplot2::ggsave("Analysis/Figures/shapefiles_by_paper_count.png", plot = p1, width = 10, height=8,dpi = 300)
+  ggplot2::ggsave("Analysis/Figures/shapefiles_by_est_count.png", plot = p2, width = 10, height=8,dpi = 300)
+  
+  print(p1)
+  print(p2)
+  return(NULL)
+}
+
+# Function to plot number of spatial locations by country
+plot_histogram_location <- function(extracted_data, filter){
+  # Group all composite locations into one country group
+  if(filter == "country_cat"){
+  extracted_data <- extracted_data %>% 
+    dplyr::mutate(
+      country_cat = ifelse(stringr::str_detect(eff_country,"\\||multi"), " multicountry", eff_country)
+    )
+  }
+
+  # Summarize number of papers/estimates per country
+  loc_count_country <- dplyr::group_by(extracted_data, !!sym(filter)) %>%
+    dplyr::summarise(unique_loc_count = length(unique(lctn_pr)))
+  
+    # Plot histogram of the number of papers/estimates per country/continent
+  p <- ggplot2::ggplot(data = loc_count_country) +
+    ggplot2::geom_bar(ggplot2::aes(x = !!sym(filter), y = unique_loc_count), stat = "identity") +
+    ggplot2::theme_bw() +
+    ggplot2::xlab("country") +
+    ggplot2::ylab("Number of locations") +
+    ggplot2::ggtitle(paste("Number of locations by country"))
+    
+  ggplot2::ggsave(paste("Analysis/Figures/histogram_location_count_by_",{filter},".png", sep = ""), plot = p,width=12,height=8,dpi = 300)
+  
+  return(p)
+
+}
+
+# Function to plot histogram of the number of papers per country or continent
+plot_histogram_paper <- function(extracted_data, filter) {
+  # Group all composite locations into one country group
+  if(filter == "country_cat"){
+  extracted_data <- extracted_data %>% 
+    dplyr::mutate(
+      country_cat = ifelse(stringr::str_detect(eff_country,"\\||multi"), " multicountry", eff_country)
+    )    
+  }
+  
+  # Summarize number of papers/estimates per country
+  paper_count_country <- dplyr::group_by(extracted_data, !!sym(filter)) %>%
+    dplyr::summarise(paper_count = length(unique(studykey)))
+  
+  # Plot histogram of the number of papers/estimates per country/continent
+  p <- ggplot2::ggplot(data = paper_count_country) +
+    ggplot2::geom_bar(ggplot2::aes(x = !!sym(filter), y = paper_count), stat = "identity") +
+    ggplot2::theme_bw() +
+    ggplot2::xlab("country") +
+    ggplot2::ylab("Number of Papers") +
+    ggplot2::ggtitle(paste("Number of Papers by country"))
+  
+  # Save the plot
+  ggplot2::ggsave(paste("Analysis/Figures/histogram_paper_count_by_",{filter},".png", sep = ""), plot = p,width=12,height=8,dpi = 300)
+  
+  return(p)
+  
+}
+
+# Function to plot histogram of the number of estimates per country or continent
+plot_histogram_est <- function(extracted_data, filter) {
+  # Group all composite locations into one country group
+  if(filter == "country_cat"){
+  extracted_data <- extracted_data %>% 
+    dplyr::mutate(
+      country_cat = ifelse(stringr::str_detect(eff_country,"\\||multi"), " multicountry", eff_country)
+    )    
+  }
+
+  # Summarize number of papers/estimates per country
+  est_count_country <-  extracted_data %>% 
+    dplyr::group_by(!!sym(filter), studykey) %>%
+    dplyr::summarise(est_count = dplyr::n()) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(!!sym(filter)) %>% 
+    dplyr::summarise(paper_weighted_count = mean(est_count))
+  
+  # Plot histogram of the number of papers/estimates per country/continent
+  p <- ggplot2::ggplot(data = est_count_country) +
+    ggplot2::geom_bar(ggplot2::aes(x = !!sym(filter), y = paper_weighted_count), stat = "identity") +
+    ggplot2::theme_bw() +
+    ggplot2::xlab({filter}) +
+    ggplot2::ylab("Number of Average Estimates per Paper") +
+    ggplot2::ggtitle(paste("Number of Estimates by ",{filter}))
+  
+  # Save the plot
+  ggplot2::ggsave(paste("Analysis/Figures/histogram_estimates_count_by_",{filter},".png", sep = ""), plot = p,width=12,height=8,dpi = 300)
+  
+  return(p)
+  
+}
+
+# Function to plot shapefiles filled by variable, facet by admin level
+plot_shapefiles_by_variable <- function(extracted_data, total_shps,country_shps, variable) {
+
+  # Merge extracted_data with shapefiles using 'lctn_pr'
+  merged_data <- left_join(total_shps, extracted_data %>% distinct(eff_admin,lctn_pr,!!sym(variable)),by = "lctn_pr") %>%
+    dplyr::filter(is.na(!!sym(variable))==F)
+  
+  # Plot shapefiles filled by the variable, faceted by admin levels
+  if(variable == "average_hdi"){
+    p <- ggplot() +
+      geom_sf(data = merged_data, aes(fill = !!sym(variable)), color = "black", alpha = 0.5) +
+      ggplot2::geom_sf(data = country_shps, fill = NA, alpha = 0) + 
+      scale_fill_viridis_c() +
+      facet_wrap(~eff_admin) +
+      theme_bw() +
+      ggtitle(paste(variable, "by Admin Levels"))    
+  } else{
+    p <- ggplot() +
+      geom_sf(data = merged_data, aes(fill = !!sym(variable)), color = "black", alpha = 0.5) + 
+      ggplot2::geom_sf(data = country_shps, fill = NA, alpha = 0, color = "black") + 
+      scale_fill_viridis_d() +
+      facet_wrap(~eff_admin) +
+      theme_bw() +
+      ggtitle(paste(variable, "by Admin Levels"))
+  }
+  # Save the plot
+  ggsave(paste("Analysis/Figures/shapefiles_by_", variable, "_facet_admin_levels.png", sep = ""), plot = p,width=12,height=8,dpi=300)
+  print(p)
+  return(NULL)
+}
+
+# Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_paper_count <- function(extracted_data, variable) {
+  # Summarize the data by the variable and count number of papers/estimates
+  paper_count_variable <- extracted_data %>% 
+    group_by(!!sym(variable)) %>%
+    summarise(paper_count = length(unique(studykey)))
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = paper_count_variable) +
+    geom_histogram(aes(x = !!sym(variable), y = paper_count), stat = "identity") +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Papers") +
+    ggtitle(stringr::str_glue("Number of papers by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_paper_count.png", sep = ""), plot = p,width=8,height=6)
+  print(p)
+  return(NULL)
+}
+
+
+# Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_est_count <- function(extracted_data, variable) {
+
+  # Summarize the data by the variable and count number of papers/estimates
+  est_count_variable <- extracted_data %>% 
+    group_by(!!sym(variable),studykey) %>%
+    summarise(est_count = n()) %>% 
+    ungroup() %>% 
+    group_by(!!sym(variable)) %>%
+    summarize(paper_weighted_est_count = mean(est_count))
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = est_count_variable) +
+    geom_histogram(aes(x = !!sym(variable), y = paper_weighted_est_count), stat = "identity") +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Average Estimates per Paper \n(sum(estiamtes across all paper)/number of papers)") +
+    ggtitle(stringr::str_glue("Number of estimates by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_est_count.png", sep = ""), plot = p, width=8,height=6)
+  print(p)
+  return(NULL)
+}
+
+
+# Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_paper_count_by_cov <- function(extracted_data, variable) {
+
+  # Summarize the data by the variable and count number of papers/estimates
+  paper_count_variable <- extracted_data %>% 
+    group_by(!!sym(variable), exp_class) %>%
+    summarise(paper_count = length(unique(studykey)))
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = paper_count_variable) +
+    geom_histogram(aes(x = !!sym(variable), y = paper_count), stat = "identity") +
+    facet_wrap(~exp_class) +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Papers") +
+    ggtitle(stringr::str_glue("Number of papers by exposure class and by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_paper_count_by_exposure.png", sep = ""), plot = p,width=8,height=6)
+  print(p)
+  return(NULL)
+}
+
+
+# Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_est_count_by_cov <- function(extracted_data, variable) {
+  # Summarize the data by the variable and count number of papers/estimates
+  est_count_variable <- extracted_data %>% 
+    group_by(!!sym(variable),exp_class,studykey) %>%
+    summarise(est_count = n()) %>% 
+    ungroup() %>% 
+    group_by(!!sym(variable),exp_class) %>%
+    summarize(paper_weighted_est_count = mean(est_count))
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = est_count_variable) +
+    geom_histogram(aes(x = !!sym(variable), y = paper_weighted_est_count), stat = "identity") +
+    facet_wrap(~exp_class) +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Average Estimates per Paper") +
+    ggtitle(stringr::str_glue("Number of estimates by exposure and by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_est_count_by_exposure.png", sep = ""), plot = p, width=8,height=6)
+  print(p)
+  return(NULL)
+}
+
+ # Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_effect_paper_count <- function(extracted_data, variable) {
+  
+  data <- extracted_data %>% 
+    dplyr::filter(a_direction != "none") %>% 
+    dplyr::group_by(!!sym(variable),a_direction,exp_class) %>% 
+    dplyr::summarise(
+      paper_count = length(unique(studykey))
+    )
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = data) +
+    geom_histogram(aes(y = paper_count, x = !!sym(variable),fill=a_direction), stat = "identity") +
+    facet_wrap(~ exp_class) +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Papers") +
+    ggtitle(stringr::str_glue("Number of papers by exposure class and by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_paper_count_by_exposure and direction.png", sep = ""), plot = p, width=8,height=6)
+  print(p)
+  return(NULL)
+}
+
+
+# Function to plot histogram of variable vs number of papers/estimates
+plot_histogram_variable_vs_effect_est_count <- function(extracted_data, variable) {
+  
+  data <- extracted_data %>% 
+    dplyr::filter(a_direction != "none") %>% 
+    dplyr::group_by(!!sym(variable),a_direction,exp_class,studykey) %>% 
+    dplyr::summarise(
+      est_count = dplyr::n()
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(!!sym(variable),exp_class,a_direction) %>% 
+    dplyr::summarise(paper_weighted_est_count = mean(est_count))
+  
+  # Plot histogram of the variable vs the number of papers/estimates
+  p <- ggplot(data = data) +
+    geom_histogram(aes(y = paper_weighted_est_count, x = !!sym(variable),fill=a_direction), stat = "identity") +
+    facet_wrap(~ exp_class) +
+    theme_bw() +
+    xlab(variable) +
+    ylab("Number of Average Estimates per Paper") +
+    ggtitle(stringr::str_glue("Number of estimates by exposure class and by ",variable))
+  
+  # Save the plot
+  ggsave(paste("Analysis/Figures/histogram_", variable, "_vs_est_count_by_exposure and direction.png", sep = ""), plot = p, width=8,height=6)
+  return(NULL)
+}
+```
+
+# **Fig 1. Spatial distribution of extracted data:**
+```{r Spatial dstribution, fig.height=4, fig.width=5, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/spatial distribution.png")){
+  plot_shapefiles_spatial(extracted_data, total_shps, country_shps)
+} else{
+  knitr::include_graphics("Analysis/Figures/spatial distribution.png")
+}
+```
+
+# **Fig 2. Spatial distribution of extracted data by number of papers:**
+```{r Spatial dstribution of number of papers, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/shapefiles_by_paper_count.png")){
+  plot_shapefiles_by_paper_est_count(extracted_data, total_shps, country_shps)
+} else{
+  knitr::include_graphics("Analysis/Figures/shapefiles_by_paper_count.png")
+}
+```
+
+# **Fig 3. Spatial distribution of extracted data by number of estimates:**
+```{r Spatial dstribution of number of estimates, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/shapefiles_by_est_count.png")){
+  plot_shapefiles_by_paper_est_count(extracted_data, total_shps, country_shps)
+} else{
+  knitr::include_graphics("Analysis/Figures/shapefiles_by_est_count.png")
+}
+```
+
+# **Fig 4. Number of locations by country:**
+```{r Number of locations by country , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_paper_count_by_country_cat.png")){
+  plot_histogram_paper(extracted_data, filter = "country_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_location_count_by_country_cat.png")
+}
+```
+
+# **Fig 5. Number of papers by country:**
+```{r Number of papers by country , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_paper_count_by_country_cat.png")){
+  plot_histogram_paper(extracted_data, filter = "country_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_paper_count_by_country_cat.png")
+}
+```
+
+# **Fig 6. Number of estimates by country:**
+```{r Number of estimates by country , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_estimates_count_by_country_cat.png")){
+  plot_histogram_est(extracted_data, filter = "country_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_estimates_count_by_country_cat.png")
+}
+```
+
+# **Fig 7. Number of locations by admin levels:**
+```{r Number of locations by admin levels , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_location_count_by_new_admin.png")){
+  plot_histogram_location(extracted_data, filter = "country_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_location_count_by_new_admin.png")
+}
+```
+
+
+# **Fig 8. Number of papers by admin levels:**
+```{r Number of papers by admin levels , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_paper_count_by_new_admin.png")){
+  plot_histogram_paper(
+    extracted_data = extracted_data, filter = "new_admin")
+  
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_paper_count_by_new_admin.png")
+}
+```
+
+# **Fig 9. Number of estimates by admin levels:**
+```{r Number of estimates by admin levels , fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_estimates_count_by_new_admin.png")){
+  plot_histogram_est(extracted_data, filter = "new_admin")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_estimates_count_by_new_admin.png")
+}
+```
+
+# **Fig 10. Spatial distribution of HDI:**
+```{r Spatial distribution of HDI, fig.height=4, fig.width=5, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/shapefiles_by_hdi_cat_facet_admin_levels.png")){
+  plot_shapefiles_by_variable(extracted_data,total_shps,country_shps,variable="hdi_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/shapefiles_by_hdi_cat_facet_admin_levels.png")
+}
+```
+
+# **Fig 11. Spatial distribution of inland or coast:**
+```{r Spatial distribution of inland or coast, fig.height=4, fig.width=5, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/shapefiles_by_inland_coast_facet_admin_levels.png")){
+  plot_shapefiles_by_variable(extracted_data,total_shps,country_shps,variable="inland_coast")
+} else{
+  knitr::include_graphics("Analysis/Figures/shapefiles_by_inland_coast_facet_admin_levels.png")
+}
+```
+
+# **Fig 12. Spatial distribution of climatic zone:**
+```{r Spatial distribution of climatic zone, fig.height=4, fig.width=5, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/shapefiles_by_new_climatic_zone_facet_admin_levels.png")){
+  plot_shapefiles_by_variable(extracted_data,total_shps,country_shps,variable="new_climatic_zone")
+} else{
+  knitr::include_graphics("Analysis/Figures/shapefiles_by_new_climatic_zone_facet_admin_levels.png")
+}
+```
+
+# **Fig 13. Number of papers by HDI categories:**
+```{r Number of papers by HDI categories, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_hdi_cat_vs_paper_count.png")){
+plot_histogram_variable_vs_paper_count(extracted_data,"hdi_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_hdi_cat_vs_paper_count.png")
+}
+```
+
+# **Fig 14. Number of estimates by HDI categories:**
+```{r Number of estimates by HDI categories, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_hdi_cat_vs_est_count_by_exposure.png")){
+plot_histogram_variable_vs_est_count(extracted_data,"hdi_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_hdi_cat_vs_est_count_by_exposure.png")
+}
+```
+
+
+# **Fig 15. Number of papers by inland or coast:**
+```{r Number of papers by inland or coast, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_inland_coast_vs_paper_count.png")){
+plot_histogram_variable_vs_paper_count(extracted_data,"inland_coast")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_inland_coast_vs_paper_count.png")
+}
+```
+
+# **Fig 16. Number of estimates by inland or coast:**
+```{r Number of estimates by inland or coast, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_inland_coast_vs_est_count_by_exposure.png")){
+plot_histogram_variable_vs_est_count(extracted_data,"inland_coast")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_inland_coast_vs_est_count_by_exposure.png")
+}
+```
+
+# **Fig 17. Number of papers by climatic zone:**
+```{r Number of papers by climatic zone, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_new_climatic_zone_vs_est_count.png")){
+plot_histogram_variable_vs_paper_count(extracted_data,"new_climatic_zone")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_new_climatic_zone_vs_paper_count.png")
+}
+```
+
+# **Fig 18. Number of estimates by climatic zone:**
+```{r Number of estimates by climatic zone, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_new_climatic_zone_vs_est_count_by_exposure.png")){
+plot_histogram_variable_vs_est_count(extracted_data,"new_climatic_zone")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_new_climatic_zone_vs_est_count_by_exposure.png")
+}
+```
+
+# **Fig 19. Number of papers by HDI categories and exposure class:**
+```{r Number of papers by HDI categories and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_hdi_cat_vs_paper_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_paper_count(extracted_data,"hdi_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_hdi_cat_vs_paper_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 20. Number of estimates by HDI categories and exposure class:**
+```{r Number of estimates by HDI categories and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_hdi_cat_vs_est_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_est_count(extracted_data,"hdi_cat")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_hdi_cat_vs_est_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 21. Number of papers by inland or coast and exposure class:**
+```{r Number of papers by inland or coast and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_inland_coast_vs_paper_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_paper_count(extracted_data,"inland_coast")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_inland_coast_vs_paper_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 22. Number of estimates by inland or coast and exposure class:**
+```{r Number of estimates by inland or coast and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_inland_coast_vs_est_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_est_count(extracted_data,"inland_coast")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_inland_coast_vs_est_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 23. Number of papers by climatic zone and exposure class:**
+```{r Number of papers by climatic zone and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_new_climatic_zone_vs_paper_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_paper_count(extracted_data,"new_climatic_zone")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_new_climatic_zone_vs_paper_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 24. Number of estimates by climatic zone and exposure class:**
+```{r Number of estimates by climatic zone and exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+if(!file.exists("Analysis/Figures/histogram_new_climatic_zone_vs_est_count_by_exposure and direction.png")){
+plot_histogram_variable_vs_effect_est_count(extracted_data,"new_climatic_zone")
+} else{
+  knitr::include_graphics("Analysis/Figures/histogram_new_climatic_zone_vs_est_count_by_exposure and direction.png")
+}
+```
+
+# **Fig 25. Distribution of HDI by exposure class:**
+```{r Distribution of HDI by exposure class, fig.height=8, fig.width=10, out.width="150%",echo=FALSE}
+ggplot2::ggplot(extracted_data, aes(x = exp_class, y = average_hdi)) + 
+  geom_boxplot() +
+  labs(title = "Distribution of Average HDI", y = "Average HDI", x = "Exposure class") +
+  theme_bw()                        
+
+```

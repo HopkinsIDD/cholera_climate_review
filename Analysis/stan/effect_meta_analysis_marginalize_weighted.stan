@@ -76,8 +76,3 @@ model {
   sigma_re ~ normal(0, 2);
 }
 
-generated quantities {
-  vector[L] I_squared;
-  
-  I_squared = sigma_re^2 / (sigma_re^2 + sigma.^2);
-}

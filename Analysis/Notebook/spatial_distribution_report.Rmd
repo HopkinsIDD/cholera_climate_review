@@ -1,0 +1,324 @@
+---
+title: "Spatial distributions"
+author: "Qulu Zheng"
+date: "2024-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(sf)
+library(dplyr)
+library(ggforce)
+library(patchwork)
+```
+
+```{r Load extracted data with shapefiles, echo=FALSE}
+data <- read.csv("cholera_climate_review/Data/cholera_climate_systematic_review_extract_into_sheets_shps.csv") %>% 
+  select(studykey,eff_admin,new_location_period_id)
+shps <- readRDS("cholera_climate_review/Data/shapefiles/location_shapefiles.rds")
+data_shp <- data %>% 
+  left_join(shps, by = c("new_location_period_id" = "lctn_pr")) %>% 
+  sf::st_as_sf() 
+
+```
+
+```{r shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
+ggplot2::ggplot() +
+  geom_sf(data = data_shp ,color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
+  theme_minimal() +                                          # Clean theme for better visuals
+  labs(
+    title = "Spatial distribution across all spatial scales"
+  ) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
+    axis.text = element_blank(),                           # Remove axis text
+    axis.ticks = element_blank()                           # Remove axis ticks
+  )
+```
+
+```{r admin1 shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
+ggplot2::ggplot() +
+  geom_sf(data = data_shp %>% filter(eff_admin == "adm1"),color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
+  facet_wrap(~ new_location_period_id , ncol = 3) +                              # Facet by admin levels
+  theme_minimal() +                                          # Clean theme for better visuals
+  labs(
+    title = "Spatial Distribution of admin1 units"
+  ) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
+    axis.text = element_blank(),                           # Remove axis text
+    axis.ticks = element_blank()                           # Remove axis ticks
+  )
+```
+
+```{r zoomed in admin1 shapefiles, echo=FALSE,fig.height= 8,fig.width=8}
+# Get unique facet IDs
+facet_ids <- unique(data_shp[data_shp$eff_admin=="adm1",]$new_location_period_id)
+
+# Loop through each facet and create a plot
+plots <- lapply(facet_ids, function(facet_id) {
+  # Filter data for the current facet
+  subset_data <- data_shp %>%
+    filter(eff_admin == "adm1", new_location_period_id == facet_id)
+  
+  # Calculate bounding box
+  bbox <- st_bbox(subset_data)
+  
+  # Create the plot for this facet
+  ggplot() +
+    geom_sf(data = subset_data, color = "black", fill = "lightblue", size = 0.1) +
+    coord_sf(
+      xlim = c(bbox["xmin"], bbox["xmax"]),
+      ylim = c(bbox["ymin"], bbox["ymax"]),
+      expand = FALSE
+    ) +
+    theme_minimal() +
+    labs(
+      title = facet_id
+    ) +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+})
+
+# Print all plots
+# Assuming 'plots' is a list of ggplot objects
+# Arrange the plots in a 4-column layout
+arranged_plots <- wrap_plots(plots, ncol = 6)
+
+# Display the arranged plots
+print(arranged_plots)
+
+```
+
+```{r admin2 shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
+ggplot2::ggplot() +
+  geom_sf(data = data_shp %>% filter(eff_admin == "adm2"),color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
+  facet_wrap(~ new_location_period_id , ncol = 3) +                              # Facet by admin levels
+  theme_minimal() +                                          # Clean theme for better visuals
+  labs(
+    title = "Spatial Distribution of admin2 units"
+  ) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
+    axis.text = element_blank(),                           # Remove axis text
+    axis.ticks = element_blank()                           # Remove axis ticks
+  )
+```
+
+```{r zoomed in admin2 shapefiles, echo=FALSE,fig.height= 8,fig.width=8}
+# Get unique facet IDs
+facet_ids <- unique(data_shp[data_shp$eff_admin=="adm2",]$new_location_period_id)
+
+# Loop through each facet and create a plot
+plots <- lapply(facet_ids, function(facet_id) {
+  # Filter data for the current facet
+  subset_data <- data_shp %>%
+    filter(eff_admin == "adm2", new_location_period_id == facet_id)
+  
+  # Calculate bounding box
+  bbox <- st_bbox(subset_data)
+  
+  # Create the plot for this facet
+  ggplot() +
+    geom_sf(data = subset_data, color = "black", fill = "lightblue", size = 0.1) +
+    coord_sf(
+      xlim = c(bbox["xmin"], bbox["xmax"]),
+      ylim = c(bbox["ymin"], bbox["ymax"]),
+      expand = FALSE
+    ) +
+    theme_minimal() +
+    labs(
+      title = facet_id
+    ) +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+})
+
+# Print all plots
+# Assuming 'plots' is a list of ggplot objects
+# Arrange the plots in a 4-column layout
+arranged_plots <- wrap_plots(plots, ncol = 6)
+
+# Display the arranged plots
+print(arranged_plots)
+```
+
+```{r admin3 shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
+ggplot2::ggplot() +
+  geom_sf(data = data_shp %>% filter(eff_admin == "adm3"),color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
+  facet_wrap(~ new_location_period_id , ncol = 3) +                              # Facet by admin levels
+  theme_minimal() +                                          # Clean theme for better visuals
+  labs(
+    title = "Spatial Distribution of admin3 units"
+  ) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
+    axis.text = element_blank(),                           # Remove axis text
+    axis.ticks = element_blank()                           # Remove axis ticks
+  )
+```
+
+```{r zoomed in admin3 shapefiles, echo=FALSE,fig.height= 8,fig.width=8}
+
+# Get unique facet IDs
+facet_ids <- unique(data_shp[data_shp$eff_admin=="adm3",]$new_location_period_id)
+
+# Loop through each facet and create a plot
+plots <- lapply(facet_ids, function(facet_id) {
+  # Filter data for the current facet
+  subset_data <- data_shp %>%
+    filter(eff_admin == "adm3", new_location_period_id == facet_id)
+  
+  # Calculate bounding box
+  bbox <- st_bbox(subset_data)
+  
+  # Create the plot for this facet
+  ggplot() +
+    geom_sf(data = subset_data, color = "black", fill = "lightblue", size = 0.1) +
+    coord_sf(
+      xlim = c(bbox["xmin"], bbox["xmax"]),
+      ylim = c(bbox["ymin"], bbox["ymax"]),
+      expand = FALSE
+    ) +
+    theme_minimal() +
+    labs(
+      title = facet_id
+    ) +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+})
+
+# Print all plots
+# Assuming 'plots' is a list of ggplot objects
+# Arrange the plots in a 4-column layout
+arranged_plots <- wrap_plots(plots, ncol = 6)
+
+# Display the arranged plots
+print(arranged_plots)
+```
+
+## non-admin
+```{r non-admin shapefiles, echo=FALSE,fig.height= 15,fig.width=15}
+ggplot2::ggplot() +
+  geom_sf(data = data_shp %>% filter(eff_admin == "non-adm geography"),color = "black", fill = "lightblue", size = 0.1) +  # Add geometry with default fill
+  facet_wrap(~ new_location_period_id , ncol = 3) +                              # Facet by admin levels
+  theme_minimal() +                                          # Clean theme for better visuals
+  labs(
+    title = "Spatial Distribution of non-admin units"
+  ) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),    # Style facet labels
+    axis.text = element_blank(),                           # Remove axis text
+    axis.ticks = element_blank()                           # Remove axis ticks
+  )
+
+```
+
+```{r zoomed in non-admin shapefiles, echo=FALSE,,fig.height= 8,fig.width=12}
+# Get unique facet IDs
+facet_ids <- unique(data_shp[data_shp$eff_admin=="non-adm geography",]$new_location_period_id)
+
+# Loop through each facet and create a plot
+plots <- lapply(facet_ids, function(facet_id) {
+  # Filter data for the current facet
+  subset_data <- data_shp %>%
+    filter(eff_admin == "non-adm geography", new_location_period_id == facet_id)
+  
+  # Calculate bounding box
+  bbox <- st_bbox(subset_data)
+  
+  # Create the plot for this facet
+  ggplot() +
+    geom_sf(data = subset_data, color = "black", fill = "lightblue", size = 0.1) +
+    coord_sf(
+      xlim = c(bbox["xmin"], bbox["xmax"]),
+      ylim = c(bbox["ymin"], bbox["ymax"]),
+      expand = FALSE
+    ) +
+    theme_minimal() +
+    labs(
+      title = facet_id
+    ) +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+})
+
+# Print all plots
+# Assuming 'plots' is a list of ggplot objects
+# Arrange the plots in a 4-column layout
+arranged_plots <- wrap_plots(plots, ncol = 6)
+
+# Display the arranged plots
+print(arranged_plots)
+```
+
+
+```{r number of papers by spatial distributions, echo=FALSE,fig.height= 15,fig.width=15}
+# Aggregate data to count the number of unique studykey values per geometry and admin level
+data_aggregated <- data_shp %>%
+  group_by(eff_admin, geometry) %>%
+  summarize(paper_count = n_distinct(studykey)) %>%
+  ungroup()
+
+ggplot(data = data_aggregated) +
+  geom_sf(aes(fill = paper_count), color = "black", size = 0.1, alpha = 0.7) +
+  scale_fill_viridis_c(
+    option = "C",
+    name = "Number of Papers",
+    trans = "log",
+    direction = -1
+  ) +
+  facet_wrap_paginate(~ eff_admin, ncol = 2, nrow = 3, page = 1) +
+  theme_minimal() +
+  labs(
+    title = "Number of Papers per Geometry by Administrative Levels (Paginated)",
+    subtitle = "Zoomed into each admin level"
+  )
+```
+
+```{r zoomed in number of papers by spatial distributions, echo=FALSE,fig.height= 15,fig.width=15}
+# Create a list of plots for each admin level with dynamic bounding boxes
+plots <- data_aggregated %>%
+  group_split(eff_admin) %>%
+  lapply(function(subset) {
+    bbox <- st_bbox(subset)
+    ggplot(data = subset) +
+      geom_sf(aes(fill = paper_count), color = "black", size = 0.1, alpha = 0.7) +
+      scale_fill_viridis_c(
+        option = "C",
+        name = "Number of Papers",
+        trans = "log",
+        direction = -1
+      ) +
+      coord_sf(
+        xlim = c(bbox["xmin"], bbox["xmax"]),
+        ylim = c(bbox["ymin"], bbox["ymax"]),
+        expand = FALSE
+      ) +
+      theme_minimal() +
+      labs(
+        title = paste("Number of Papers -", subset$eff_admin[1]),
+        subtitle = "Zoomed view for this admin level",
+        caption = "Source: Your Dataset"
+      )
+  })
+
+# Display all plots
+for (plot in plots) {
+  print(plot)
+}
+```

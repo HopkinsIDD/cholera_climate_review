@@ -21,12 +21,13 @@ print(opt)
 
 # Load data ---------------------------------------------------------------
 
-dat_path <- here::here("Data/cholera_climate_systematic_review_extract_into_sheets.xlsx")
+dat_path <- here::here("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets.xlsx")
 
 # Load effect extraction data
-est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
+est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
+  read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
   # Fix dates
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.))) %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>% 
   # Unpack countries for multi-country studies
   mutate(country_list = map(eff_country, ~ str_split(., pattern = "\\|")[[1]])) %>% 
   # Fix estimates
@@ -39,18 +40,42 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
                              T ~ a_class))  %>%
   # Determine if effect is already on log scale (important for ratios)
   group_by(studykey, exp_class, a_raw) %>% 
-  mutate(a_effect_log_scale = case_when(a_class == "ratio" & any(a_effect < 0) ~ TRUE,
-                                        a_class == "ratio" & studykey == "Charnley2021" ~ TRUE,
-                                        a_class == "ratio" & studykey == "Yang2022" ~ TRUE,
-                                        TRUE ~ FALSE)) %>% 
   ungroup() %>% 
   # Se ratio to log10 ratio for plots
-  mutate(a_effect = case_when(
-    # This is when the ratio is already on a log scale
-    a_class == "ratio" & a_effect_log_scale ~ log10(exp(a_effect)),
-    # This is when the ratio is already on a log scale
-    a_class == "ratio" ~ log10(a_effect),
-    TRUE ~ a_effect),
+  mutate(
+    a_effect_raw = a_effect,
+    a_effect_natural_scale = case_when(
+      # Update Feb 13 2025: We now have a column specifying the transformation to apply if any
+      a_transform == "exp" ~ exp(a_effect),
+      a_transform == "base10" ~ 10^a_effect,
+      TRUE ~ a_effect
+    ),
+    a_uncert_lb_natural_scale = case_when(
+      a_transform == "exp" ~ exp(a_uncert_lb),
+      a_transform == "base10" ~ 10^a_uncert_lb,
+      TRUE ~ a_uncert_lb
+    ),
+    a_uncert_ub_natural_scale = case_when(
+      a_transform == "exp" ~ exp(a_uncert_ub),
+      a_transform == "base10" ~ 10^a_uncert_ub,
+      TRUE ~ a_uncert_ub
+    ),
+    # Now apply log10 to ratios
+    a_effect = case_when(
+      a_class == "ratio" ~ log10(a_effect_natural_scale),
+      TRUE ~ a_effect_natural_scale
+    ),
+    # Now apply log10 to ratios
+    a_uncert_lb = case_when(
+      a_class == "ratio" ~ log10(a_uncert_lb_natural_scale),
+      TRUE ~ a_uncert_lb_natural_scale
+    ),
+    # Now apply log10 to ratios
+    a_uncert_ub = case_when(
+      a_class == "ratio" ~ log10(a_uncert_ub_natural_scale),
+      TRUE ~ a_uncert_ub_natural_scale
+    ),
+    # Update class to reflect change in ratios
     a_class = case_when(a_class == "ratio" ~ "log10_ratio",
                         TRUE ~ a_class)) %>% 
   # Levels
@@ -66,8 +91,11 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   mutate(exp_class = factor(exp_class, levels = c("precipitation", "temperature", "flood", "drought"))) %>%
   # Define lag
   mutate(lag_days = ifelse(lag_days == "missing", NA_character_, lag_days) %>% as.numeric(),
-         lag_class = cut(lag_days, c(0, 8, 15, 32, 62, 92, Inf)),
-         lag_class = factor(lag_class, labels = c("1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months"))) %>% 
+         lag_class = cut(lag_days, c(0, 8, 15, 32, 62, 92, Inf),
+                         include.lowest = TRUE, right = FALSE),
+         lag_class = factor(lag_class, 
+                            levels = c("[0,8)", "[8,15)", "[15,32)", "[32,62)", "[62,92)", "[92,Inf)"),
+                            labels = c("1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months"))) %>% 
   # Define rainy season
   mutate(rainy_season = factor(rainy_season, 
                                levels = c("out_of_rainy_season", "mixed", "in_rainy_season"), 
@@ -78,7 +106,10 @@ est_data <- readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   mutate(continent = factor(continent)) %>% 
   mutate(a_uncert_significant = factor(a_uncert_significant, 
                                        levels = c("TRUE", "FALSE", "NA"),
-                                       labels = c("TRUE", "FALSE", "unspecified")))
+                                       labels = c("TRUE", "FALSE", "unspecified"))) %>% 
+  mutate(new_climatic_zone = factor(new_climatic_zone),
+         inland_coast = factor(inland_coast),
+         hdi_cat = factor(hdi_cat))
 
 
 # Save
