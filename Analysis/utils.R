@@ -182,7 +182,9 @@ get_all_exp_class <- function() {
 #' @return
 #'
 colors_continent <- function() {
-  colors <- c("#FFA378", "#A8B545", "#8C796D")
+  # colors <- c("#FFA378", "#A8B545", "#8C796D")
+  colors <- c("#EB9711", "#8C07DE", "#474357")
+  
   names(colors) <- c("Africa", "Asia", "Other")
   colors
 }
