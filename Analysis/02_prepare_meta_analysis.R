@@ -11,9 +11,11 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-e", "--effect"), 
-              default = "corr", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
-              default = "flood", action ="store", type = "character", help = "Make intermediate plots.")
+              default = "temperature", action ="store", type = "character", help = "Make intermediate plots."),
+  make_option(c("-o", "--out_class"), 
+              default = "occurrence", action ="store", type = "character", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -43,18 +45,8 @@ if (opt$effect == "corr") {
 
 # Filter for exposure of interest
 data <- data %>% 
-  filter(exp_class == opt$exp_class)
-
-# Transform data if necessary
-if (opt$effect == "corr") {
-  y <- z_transform(data$a_effect)
-} else if (opt$effect == "direction_positive") {
-  y <- data$a_direction == "positive"
-} else if (opt$effect == "direction_negative") {
-  y <- data$a_direction == "negative"
-} else {
-  y <- data$a_effect
-}
+  filter(exp_class == opt$exp_class,
+         out_class_metric == opt$out_class)
 
 # Fill in urban_rural_class
 data <- data %>% 
@@ -75,16 +67,22 @@ if (nrow(data) == 0) {
   exit()
 }
 
+# Transform data if necessary
+if (opt$effect == "corr") {
+  y <- z_transform(data$a_effect)
+} else if (opt$effect == "direction_positive") {
+  y <- data$a_direction == "positive"
+} else if (opt$effect == "direction_negative") {
+  y <- data$a_direction == "negative"
+} else {
+  y <- data$a_effect
+}
 
 # Covariate matrix --------------------------------------------------------
 
 options(na.action='na.pass')
-# if (length(unique(data$full_score)) > 1) {
-#   eq <- ~ continent + admin_level + full_score + lag_class + rainy_season + urban_rural_class
-# } else {
-#   eq <- ~ continent + admin_level + lag_class + rainy_season + urban_rural_class
-# }
 
+# Regression equation
 eq <- ~ continent + lag_class + rainy_season + urban_rural_class + new_climatic_zone + hdi_cat + inland_coast
 
 # Parse the list of covariates used to save
@@ -165,6 +163,45 @@ p_missing_covar <- prob_missing_covar_combs %>%
 
 X[is.na(X)] <- 0
 
+
+# Unique combinations -----------------------------------------------------
+# continent + lag_class + rainy_season + urban_rural_class + new_climatic_zone + hdi_cat + inland_coast
+covars <- as.character(eq) %>% str_split("\\+") %>% .[[2]] %>% str_trim()
+
+# Define the matrix of all possible covariate combinations
+all_u_covar <- map(covars,
+                   function(x) {
+                     unique(est_data[[x]]) %>% 
+                       .[!is.na(.)]
+                   }) %>% 
+  set_names(covars) %>% 
+  expand.grid() %>% 
+  as_tibble()
+
+# Make matrix of all covariate combinations
+u_covar_mat <- model.matrix(data = all_u_covar, eq) %>% 
+  unique()
+
+poststrat_matrices <- map(c("all", covars), function(x){
+  getPostStratMatrix(variable = x,
+                     u_covar_mat = u_covar_mat,
+                     u_covar_df = all_u_covar,
+                     eq = eq,
+                     est_data = est_data)
+})
+
+U_poststrats <- map_dbl(poststrat_matrices, nrow)
+postrat_names <- map(1:(length(covars)+1), function(x) {str_c(c("all", covars)[x], rownames(poststrat_matrices[[x]]), sep = "-")}) %>% 
+  unlist()
+
+# Pad to maximum
+postrat_end <- cumsum(U_poststrats)
+postrat_start <- postrat_end - U_poststrats + 1
+
+poststrat_mat_comb <- do.call(rbind, poststrat_matrices)
+U_poststrat <- nrow(poststrat_mat_comb)
+U_covar <- nrow(u_covar_mat)
+
 # Maps --------------------------------------------------------------------
 
 u_studies <- data$studykey %>% unique() %>% sort()
@@ -194,7 +231,11 @@ stan_data <- list(
   missing_covar_ends = missing_covar_ends,
   p_missing_covar = p_missing_covar,
   map_to_study = map_to_study,
-  map_to_weight = map_to_weight
+  map_to_weight = map_to_weight,
+  U_poststrat = U_poststrat,
+  poststrat_mat_comb = poststrat_mat_comb,
+  U_covar = U_covar,
+  u_covar_mat = u_covar_mat
 )
 
 # Save
@@ -202,5 +243,6 @@ saveRDS(list(data = data,
              X = X, 
              X = X_missing,
              all_covars = all_covars,
-             stan_data = stan_data),
-        file = make_stan_data_filename(effect = opt$effect, exposure = opt$exp_class))
+             stan_data = stan_data,
+             postrat_names = postrat_names),
+        file = make_stan_data_filename(opt = opt))

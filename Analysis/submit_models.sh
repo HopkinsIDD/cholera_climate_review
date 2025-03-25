@@ -3,16 +3,20 @@
 echo "Beginning of script"
 date
 
-effects=('corr' 'diff' 'ratio')
+effects=('corr' 'direction_positive')
 exposures=('flood' 'precipitation' 'temperature' 'drought')
+outclass=('occurrence' 'incidence')
 
 for effect in "${effects[@]}"
 do
   for exposure in "${exposures[@]}"
   do
-    echo "Running $variable $exposure";
-    Rscript Analysis/02_prepare_meta_analysis.R -e $effect  -c $exposure;
-    Rscript Analysis/03_run_meta_analysis.R -e $effect  -c $exposure;
+    for out in "${outclass[@]}"
+    do
+      echo "Running $variable $exposure $out";
+      Rscript Analysis/02_prepare_meta_analysis.R -e $effect  -c $exposure -o $out;
+      Rscript Analysis/03_run_meta_analysis.R -e $effect  -c $exposure -o $out;
+    done
   done
 done
 

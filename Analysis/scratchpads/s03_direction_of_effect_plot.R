@@ -5,8 +5,10 @@
 # Preamble ----------------------------------------------------------------
 
 library(tidyverse)
-library(gt)    # first try using gt
+library(gt)
 library(here)
+
+source("Analysis/utils.R")
 
 # Load data ---------------------------------------------------------------
 
@@ -21,25 +23,21 @@ scores <- readRDS(here("generated_data/paper_scores.rds")) %>%
   ungroup() %>% 
   distinct(studykey, tot_score) %>% 
   mutate(score_cat = cut(tot_score, c(0, 8, 10, Inf), include.lower = T, right = F),
-         score_cat = factor(score_cat, labels = c("low", "medium", "high")))
+         score_cat = factor(score_cat, labels = c("low", "medium", "high")) %>% 
+           forcats::fct_relevel(rev(c("low", "medium", "high"))))
 
-thresh <- 0.7
 
 # Compute statistics for direction of effect plot
 dir_data <- est_data %>% 
   group_by(studykey, out_class_metric, exp_class, continent, admin_level) %>%
-  # Apply the algorithm in Box 1 of Boon and Thomson
-  summarise(N = n(),    # Number of estimates
-            n_pos = sum(a_direction == "positive"),
-            n_neg = sum(a_direction == "negative"),
-            n_dir = n_pos + n_neg,
-            overall_dir = case_when(n_pos >= thresh * n_dir ~ "positive",
-                                    n_neg >= thresh * n_dir ~ "negative",
-                                    TRUE ~ "uncertain") %>% 
-              factor(levels = c("positive", "negative", "uncertain"),
-                     labels = c("higher", "lower", "uncertain"))) %>% 
-  ungroup() 
-
+  summarise_directions() %>% 
+  ungroup()  %>% 
+  mutate(studykey = str_replace(studykey, "\xe6", "e"),
+         dir_icon = case_when(overall_dir == "higher" ~ "caret-up",
+                              overall_dir == "lower" ~ "caret-down",
+                              TRUE ~ "caret-left,caret-right"),
+         overall_dir = factor(overall_dir, labels = c("Positive", "Negative", "Conflicting")), 
+         pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) 
 
 all_gts <- dir_data %>% 
   group_by(exp_class, out_class_metric) %>% 
@@ -47,42 +45,43 @@ all_gts <- dir_data %>%
   map(function(x) {
     
     dir_data2 <- x %>% 
-      mutate(studykey = str_replace(studykey, "\xe6", "e"),
-             dir_icon = case_when(overall_dir == "higher" ~ "caret-up",
-                                  overall_dir == "lower" ~ "caret-down",
-                                  TRUE ~ "caret-left,caret-right"),
-             pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) %>% 
-      select(studykey, pubyear, exp_class, out_class_metric, continent, admin_level, dir_icon) %>% 
+      select(studykey, pubyear, exp_class, out_class_metric, continent, admin_level, dir_icon, overall_dir) %>% 
+      mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
       inner_join(scores) %>% 
-      arrange(dir_icon, score_cat, pubyear) 
+      arrange(dir_icon_lvls, score_cat, pubyear) %>% 
+      group_by(dir_icon) %>% 
+      mutate(bottom_line = row_number() == n()) %>% 
+      ungroup()
     
     gt_list <- dir_data2 %>% 
       group_by(continent) %>% 
       group_split() %>% 
       map(function(y) {
         y %>% 
-          select(studykey, admin_level, score_cat, dir_icon) %>% 
-          gt() %>% 
+          select(studykey, admin_level, score_cat, dir_icon, bottom_line, overall_dir) %>% 
+          gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
           fmt_icon("dir_icon") %>% 
           tab_header(
             title = md(str_glue("exposure: **{y$exp_class[1]}**\ncontinent: **{y$continent[1]}**\noutcome: **{y$out_class_metric[1]}**")),
           ) %>% 
-          tab_style(
-            style = list(cell_fill(color = c("#EB9696"))),
-            locations = cells_body(rows = score_cat == "low")
-          ) %>% 
-          tab_style(
-            style = list(cell_fill(color = c("#E8AD7E"))),
-            locations = cells_body(rows = score_cat == "medium")
-          ) %>% 
-          tab_style(
-            style = list(cell_fill(color = c("#A5C295"))),
-            locations = cells_body(rows = score_cat == "high")
-          ) 
+          add_doe_styling()
       })
     
     gt_group(.list = gt_list)  %>% 
       gtsave(filename = str_glue("figures/eff_dir_plot_exp-{x$exp_class[1]}_outcome-{x$out_class_metric[1]}.html"))
+    
+    # Also save with all combined
+    gt_comb <- dir_data2 %>% 
+      select(studykey, continent, admin_level, score_cat, dir_icon, bottom_line, overall_dir) %>% 
+      gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+      fmt_icon("dir_icon") %>% 
+      tab_header(
+        title = md(str_glue("exposure: **{x$exp_class[1]}**\noutcome: **{x$out_class_metric[1]}**")),
+      ) %>% 
+      add_doe_styling()
+    
+    gt_comb  %>% 
+      gtsave(filename = str_glue("figures/eff_dir_plot_exp-{x$exp_class[1]}_outcome-{x$out_class_metric[1]}_combined.html"))
     
     gt_list
   })
@@ -92,3 +91,43 @@ all_gts %>%
   unlist(recursive = F) %>% 
   gt_group(.list = .)  %>% 
   gtsave(filename = str_glue("figures/eff_dir_plot_all.html"))
+
+
+# Attempt at combining things
+dir_dat3 <- dir_data %>% 
+  select(studykey, pubyear, exp_class, out_class_metric, continent, admin_level, dir_icon, overall_dir) %>% 
+  mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
+  inner_join(scores) %>% 
+  arrange(dir_icon_lvls, score_cat, pubyear) %>% 
+  group_by(dir_icon) %>% 
+  mutate(bottom_line = row_number() == n()) %>% 
+  ungroup() %>% 
+  select(studykey, pubyear, exp_class, out_class_metric, continent, admin_level, dir_icon, overall_dir, score_cat, bottom_line) %>% 
+  filter(out_class_metric == "occurrence") %>% 
+  pivot_wider(names_from = "exp_class",
+              values_from = "dir_icon") %>% 
+  select(studykey, pubyear, continent, admin_level, overall_dir, score_cat, bottom_line, 
+         precipitation, temperature, flood, drought) %>% 
+  arrange(score_cat, desc(precipitation), desc(temperature), desc(flood), desc(drought),pubyear) %>% 
+  select(-pubyear) 
+
+gt1 <- dir_dat3 %>%
+  filter(overall_dir == "Positive") %>% 
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("precipitation", "temperature", "flood", "drought")) %>% 
+  add_doe_styling()  
+
+
+gt2 <- dir_dat3 %>%
+  filter(overall_dir != "Positive") %>% 
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("precipitation", "temperature", "flood", "drought")) %>% 
+  add_doe_styling()
+
+
+gtExtras::gt_two_column_layout(tables = list(gt1, gt2), 
+                               output = "save",
+                               filename = "figures/eff_dir_plot_all_exp_classes_occurrence.png",
+                               vwidth = 1450, vheight = 820)
+
+# gtsave(filename = str_glue("figures/eff_dir_plot_all_exp_classes.html"))

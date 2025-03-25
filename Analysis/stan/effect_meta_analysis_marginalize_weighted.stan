@@ -1,6 +1,14 @@
 //
 // Performs correlation meta-analysis
-
+functions {
+  vector inv_z_transform(vector eta) {
+    vector[num_elements(eta)] output;
+    
+    output = (exp(2*eta) - 1)./(exp(2*eta) + 1);
+    
+    return output;
+  }
+}
 
 data {
   int<lower=0> N;    // number of observations
@@ -11,7 +19,7 @@ data {
   matrix[N, J] X;
   int<lower=0> L;    // number of classes of precision
   int<lower=0> M;    // number of missing covariates
-
+  
   vector[N] y;    // observations
   
   array[N] int<lower=1, upper=K> map_to_study;    // map from observation to study
@@ -22,6 +30,14 @@ data {
   array[N_missing] int<lower=1, upper=M> missing_covar_starts;
   array[N_missing] int<lower=1, upper=M> missing_covar_ends;
   vector<lower=0,upper=1>[M] p_missing_covar;
+  
+  // post-stratification
+  int U_poststrat;
+  int U_covar;
+  matrix[U_poststrat, U_covar] poststrat_mat_comb;
+  matrix[U_covar, J] u_covar_mat;
+  
+  int transform;
 }
 
 transformed data {
@@ -70,9 +86,16 @@ model {
   y[ind_full] ~ normal(mu_full, sigma[map_to_weight[ind_full]]);
   target += sum(ll_missing);
   
-  beta ~ normal(0, 1);
+  beta ~ normal(0, .5);
   eta_raw ~ std_normal();
   sigma ~ normal(0, 2);
   sigma_re ~ normal(0, 2);
 }
 
+generated quantities {
+  vector[U_poststrat] poststrat;
+  
+  if (transform == 1) {
+    poststrat = inv_z_transform(to_vector(poststrat_mat_comb * u_covar_mat * beta));
+  }
+}

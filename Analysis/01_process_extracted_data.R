@@ -12,7 +12,7 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-p", "--do_plots"), 
-              default = TRUE, action ="store", type = "logical", help = "Make intermediate plots.")
+              default = FALSE, action ="store", type = "logical", help = "Make intermediate plots.")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))

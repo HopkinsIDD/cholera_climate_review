@@ -184,6 +184,63 @@ get_all_exp_class <- function() {
   c("flood", "drought", "precipitation", "temperature")
 }
 
+get_all_out_class <- function() {
+  c("occurrence", "incidence")
+}
+
+
+
+# Direction of effect plot ------------------------------------------------
+
+#' summaries_directions
+#' Summarise directions for direction of effect plot following Boon and Thomson 2021 https://doi.org/10.1002/jrsm.1458
+#' 
+#' @param df 
+#' @param thresh 
+#'
+summarise_directions <- function(df, 
+                                 thresh = 0.7) {
+  df %>% 
+    # Apply the algorithm in Box 1 of Boon and Thomson
+    summarise(N = n(),    # Number of estimates
+              n_pos = sum(a_direction == "positive"),
+              n_neg = sum(a_direction == "negative"),
+              n_dir = n_pos + n_neg,
+              overall_dir = case_when(n_pos >= thresh * n_dir ~ "positive",
+                                      n_neg >= thresh * n_dir ~ "negative",
+                                      TRUE ~ "uncertain") %>% 
+                factor(levels = c("positive", "negative", "uncertain"),
+                       labels = c("higher", "lower", "uncertain")))
+}
+
+add_doe_styling <- function(gtx) {
+  fill_colors <- c("low" = "#FFACA6", "med" = "#FFC28C", "high" = "#D6FFC2")
+  
+  gtx %>% 
+    # Add colors for score quality
+    tab_style(
+      style = list(cell_fill(color = fill_colors["low"])),
+      locations = cells_body(rows = score_cat == "low")
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = fill_colors["med"])),
+      locations = cells_body(rows = score_cat == "medium")
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = fill_colors["high"])),
+      locations = cells_body(rows = score_cat == "high")
+    ) %>% 
+    # Add bottom line for change in directions
+    tab_style(
+      style = cell_borders(sides = c("bottom"),  weight = px(0.5)),
+      locations = cells_body(rows = bottom_line == TRUE)
+    ) %>% 
+    cols_hide(c("score_cat", "bottom_line", "overall_dir"))  %>% 
+    tab_stub_indent(
+      rows = everything(),
+      indent = 3
+    )
+}
 
 # Plots -------------------------------------------------------------------
 
@@ -359,16 +416,184 @@ inv_z_transform <- function(x) {
 
 
 # File names --------------------------------------------------------------
-
-make_output_filename <- function(effect, exposure) {
-  str_glue("generated_data/stan_output_{effect}_{exposure}.rds")
+#' make_filename
+#'
+#' @param basename 
+#' @param outdir 
+#' @param opt 
+#' @param parse_opt 
+#' @param type 
+#' @param verbose 
+#'
+make_filename <- function(basename, 
+                          outdir = here("generated_data/"), 
+                          opt = NULL, 
+                          parse_opt = NULL,
+                          type = "rds",
+                          verbose = TRUE) {
+  
+  if (!is.null(parse_opt)) {
+    parsed_opt <- str_c("_", parse_opt(opt))
+  } else {
+    parsed_opt <- ""
+  }
+  
+  file_name <- str_glue("{outdir}{basename}{parsed_opt}.{type}")
+  
+  if (verbose) {
+    cat("-- file name:", file_name, "\n")
+  }
+  
+  file_name
 }
 
-make_stan_data_filename <- function(effect, exposure) {
-  str_glue("generated_data/stan_data_{effect}_{exposure}.rds")
+parse_stan_opt <- function(opt) {
+  res <- str_glue("effect-{opt$effect}_exp-{opt$exp_class}_out-{opt$out_class}")
+  
+  if (is.null(res)) {
+    stop("Failed parsing options.")
+  }
+  
+  res
+}
+
+#' make_inc_period_stan_data_filename
+#' filename for stan data for incubation period
+#' 
+#' @param outdir 
+#' @param opt 
+#'
+make_stan_data_filename <- function(outdir = here("generated_data/"),
+                                    opt) {
+  make_filename(basename = "stan_data",
+                outdir = outdir,
+                opt = opt,
+                parse_opt = parse_stan_opt,
+                type = "rds")
 }
 
 
+#' make_stan_fit_filename
+#' filename for stan data for incubation period
+#' 
+#' @param outdir 
+#' @param opt 
+#'
+make_stan_fit_filename <- function(outdir = here("generated_data/"),
+                                   opt) {
+  
+  make_filename(basename = "stan_fit",
+                outdir = outdir,
+                opt = opt,
+                parse_opt = parse_stan_opt,
+                type = "rds")
+}
+
+
+# Post-stratification -----------------------------------------------------
+
+#' getPostStratMatrix
+#'
+#' @param variable 
+#' @param what 
+#' @param eq 
+#' @param u_covar_df 
+#' @param u_covar_mat 
+#' @param lab_data 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+getPostStratMatrix <- function(variable,
+                               eq,
+                               u_covar_df,
+                               u_covar_mat,
+                               est_data) {
+  
+  
+  # Dimension along which to post-stratify
+  
+  if (variable == "all") {
+    u_poststrat_strata <- "all"
+    U_poststrat <- 1
+    poststrat_col <- NULL
+  } else {
+    u_poststrat_strata <- unique(u_covar_df[[variable]]) %>% sort()
+    U_poststrat <- length(u_poststrat_strata)
+    poststrat_col <- variable
+  }
+  
+  if (is.na(variable)) {
+    cat("-- No stratification for", variable, "in", "(not found in data)\n")
+    return(matrix(1, nrow = 1, ncol = 1))
+  }
+  
+  vars <- eq %>% 
+    as.character() %>% 
+    .[[2]] %>% 
+    str_split("\\+") %>% .[[1]] %>% 
+    str_subset(variable, negate = T) %>% 
+    str_subset("1", negate = T) %>% 
+    str_trim()
+  
+  if (length(vars) == 0 & is.null(u_poststrat_strata)) {
+    cat("-- No stratification for", what, "\n")
+    return(matrix(1, nrow = 1, ncol = 1))
+  }
+  
+  # Compute post-stratified estimates for each level.
+  # For categorical variables these are computed directly from the data
+  # Compute frequencies
+  poststrat_freq <- est_data %>% 
+    group_by_at(c(poststrat_col, vars)) %>% 
+    tally() %>% 
+    na.omit() %>% 
+    group_by_at(poststrat_col) %>% 
+    mutate(frac = n/sum(n)) %>% 
+    ungroup()
+  
+  # Make covariate matrix corresponding to frequency table
+  covar_mat_poststrat_freq <- model.matrix(data = poststrat_freq, eq)
+  
+  poststrat_mat <- matrix(0, nrow = U_poststrat, ncol = nrow(u_covar_mat))
+  counts <- rep(0, length(u_poststrat_strata))
+  
+  # Loop over poststrat_freq rows to match frequency tables
+  for (i in 1:nrow(poststrat_freq)) {
+    if (is.null(poststrat_col)) {
+      ii <- 1
+    } else {
+      # What strata is the post-stratification for?
+      ii <- which(u_poststrat_strata == poststrat_freq[[poststrat_col]][i])
+    }
+    
+    # Get index of row in u_covar_mat that matches
+    j <- map_lgl(1:nrow(u_covar_mat), function(k){
+      identical(covar_mat_poststrat_freq[i,],
+                u_covar_mat[k, ])
+    }) %>% 
+      which()
+    
+    if (length(j) > 0) {
+      counts[ii] <- counts[ii] + 1
+      # Set the frequency
+      poststrat_mat[ii, j] <- poststrat_freq$frac[i]
+    }
+  }
+  
+  # Add intercept if none present
+  for (i in 1:nrow(poststrat_mat)) {
+    if (sum(poststrat_mat[i, ]) == 0) {
+      poststrat_mat[i, 1] <- 1
+    }
+  }
+  
+  # Check that rows sum to 1
+  testthat::expect_equal(rowSums(poststrat_mat), rep(1, nrow(poststrat_mat)))
+  rownames(poststrat_mat) <- u_poststrat_strata
+  poststrat_mat
+}
 
 # Post-processing ---------------------------------------------------------
 
@@ -378,7 +603,9 @@ get_effect_sizes <- function(res_files) {
     stan_fit <- readRDS(x)
     effect <- str_extract(x, get_all_effects() %>% str_c(collapse = "|"))
     exp_class <- str_extract(x, get_all_exp_class() %>% str_c(collapse = "|"))
-    stan_data <- readRDS(make_stan_data_filename(effect = effect, exposure = exp_class))
+    out_class <- str_extract(x, get_all_out_class() %>% str_c(collapse = "|"))
+    
+    stan_data <- readRDS(str_replace(x, "stan_fit", "stan_data"))
     strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
     
     stan_fit$summary("beta") %>%
@@ -393,6 +620,31 @@ get_effect_sizes <- function(res_files) {
       })) %>% 
       select(what, strata, mean, q5, q95) %>% 
       mutate(effect = effect,
-             exp_class = exp_class)
+             exp_class = exp_class,
+             out_class = out_class)
+  })
+}
+
+
+get_poststrat <- function(res_files) {
+  map_df(res_files, function(x) {
+    stan_fit <- readRDS(x)
+    effect <- str_extract(x, get_all_effects() %>% str_c(collapse = "|"))
+    exp_class <- str_extract(x, get_all_exp_class() %>% str_c(collapse = "|"))
+    out_class <- str_extract(x, get_all_out_class() %>% str_c(collapse = "|"))
+    
+    stan_data <- readRDS(str_replace(x, "stan_fit", "stan_data"))
+    strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
+    
+    stan_fit$summary("poststrat") %>%
+      mutate(var = stan_data$postrat_names,
+             what = str_split(var, "-") %>% map_chr(~.[1]),
+             strata = str_split(var, "-") %>% map_chr(~.[2]),
+             strata = factor(strata, levels = stan_data$postrat_names %>% str_split("-") %>% map_chr(~.[2]))) %>%
+      filter(!is.na(what)) %>% 
+      select(what, strata, mean, q5, q95) %>% 
+      mutate(effect = effect,
+             exp_class = exp_class,
+             out_class = out_class)
   })
 }

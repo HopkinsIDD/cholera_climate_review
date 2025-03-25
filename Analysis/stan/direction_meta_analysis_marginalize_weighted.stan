@@ -21,6 +21,12 @@ data {
   array[N_missing] int<lower=1, upper=M> missing_covar_starts;
   array[N_missing] int<lower=1, upper=M> missing_covar_ends;
   vector<lower=0,upper=1>[M] p_missing_covar;
+  
+  // post-stratification
+  int U_poststrat;
+  int U_covar;
+  matrix[U_poststrat, U_covar] poststrat_mat_comb;
+  matrix[U_covar, J] u_covar_mat;
 }
 
 transformed data {
@@ -74,4 +80,10 @@ model {
   beta ~ normal(0, .5);
   eta_raw ~ std_normal();
   sigma_re ~ normal(0, 2);
+}
+
+generated quantities {
+  vector[U_poststrat] poststrat;
+  
+  poststrat = inv_logit(to_vector(poststrat_mat_comb * u_covar_mat * beta));
 }
