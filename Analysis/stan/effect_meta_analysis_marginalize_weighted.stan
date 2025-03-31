@@ -8,6 +8,30 @@ functions {
     
     return output;
   }
+  
+  real inv_z_transform_real(real eta) {
+    real output;
+    
+    output = (exp(2*eta) - 1)/(exp(2*eta) + 1);
+    
+    return output;
+  }
+  
+  real to_integrate(
+    real x,          // Function argument
+    real xc,         // Complement of function argument
+    //  on the domain (defined later)
+    array[] real theta,    // parameters
+    array[] real x_r,      // data (real)
+    array[] int x_i) {     // data (integer)
+    
+    real mu = theta[1];
+    real sigma = theta[2];
+    real res;
+    
+    res = inv_z_transform_real(mu + sigma * inv_Phi(x));
+    return res;
+    }
 }
 
 data {
@@ -94,8 +118,28 @@ model {
 
 generated quantities {
   vector[U_poststrat] poststrat;
+  // vector[U_poststrat] poststrat_pred;
   
-  if (transform == 1) {
-    poststrat = inv_z_transform(to_vector(poststrat_mat_comb * u_covar_mat * beta));
-  }
+  // if (transform == 1) {
+    //   poststrat = to_vector(poststrat_mat_comb * inv_z_transform(u_covar_mat * beta));
+    // }
+    
+    {
+      vector[U_covar] eta;          // logit-linear perdictor 
+      vector[U_covar] eta_re;
+      
+      eta = u_covar_mat * beta;
+      poststrat = poststrat_mat_comb * inv_z_transform(eta);
+      // 
+      // for (i in 1:U_covar) {
+      //   array[0] real x_r;
+      //   array[0] int x_i;
+      //   array[2] real par;
+      //   par[1] = eta[i];
+      //   par[2] = sigma_re;
+      //   eta_re[i] = integrate_1d(to_integrate, 0, 1, par, x_r, x_i, 1e-5);
+      // }
+      // 
+      // poststrat_pred = poststrat_mat_comb * eta_re;
+    }
 }
