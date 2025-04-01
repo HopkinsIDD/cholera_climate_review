@@ -1,0 +1,300 @@
+---
+title: "Cholera/climate review country report"
+date: "`r lubridate::now()`"
+output:
+  bookdown::html_document2:
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+params:
+  countries: "all"
+---
+
+# Report for `r params$countries`
+
+The aim of this report is to show the extracted data for `r params$countries`.
+
+```{r setup,  include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.align = "center",
+  message = FALSE,
+  warning = FALSE,
+  cache.lazy = F,
+  bitmapType = "cairo"
+)
+Sys.setlocale("LC_ALL", "C")
+```
+
+```{r preamble}
+library(tidyverse)
+library(magrittr)
+library(ggthemes)
+library(kableExtra)
+library(here)
+library(sf)
+library(gtsummary)
+library(cowplot)
+source(here("Analysis/utils.R"))
+
+theme_gtsummary_compact(set_theme = TRUE, font_size = 13)
+```
+
+
+```{r data}
+
+# Update
+dat <- readRDS(here("generated_data/processed_estimate_data.rds"))
+
+if (params$countries == "all") {
+  this_countries <- unique(unlist(dat$country_list))
+} else if (params$countries %in% c("Africa", "Asia", "Other")) {
+  dat <- readRDS(here("generated_data/processed_estimate_data.rds"))
+  this_countries <- unique(unlist(dat$country_list[dat$continent == params$countries]))
+}  else {
+  this_countries <- str_split(params$countries, ",") %>% .[[1]]
+}
+
+# All estimates
+est_data <- readRDS(here("generated_data/processed_estimate_data.rds")) %>% 
+  filter(map_lgl(country_list, function(x) any(map_lgl(this_countries, ~ . %in% x)))) %>% 
+  mutate(studykey = iconv(studykey, from="LATIN1", to ="ASCII")) %>% 
+  mutate(a_class = case_when(str_detect(a_class, "corr") ~ "correlation",
+                             str_detect(a_class, "log10_ratio") ~ "log10_ratio",
+                             str_detect(a_class, "risk difference") ~ "risk difference",
+                             TRUE ~ "other"))
+
+# Metadata on extracted papers
+metadata <- readxl::read_excel(here("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets.xlsx")
+                               , sheet = "metadata_0329") %>% 
+  filter(remove_keep == "keep") %>% 
+  filter(studykey %in% est_data$studykey) %>% 
+  arrange(studykey)
+
+# Shapefiles
+# shapefiles <- readRDS(here("Data/shapefiles/location_shapefiles.rds"))  %>% 
+#   filter(studykey %in% est_data$studykey)
+
+```
+
+```{r data-processing}
+
+# Compute time bounds
+est_timings <- est_data %>% 
+  group_by(studykey, continent, eff_loc, admin_level) %>% 
+  summarise(tl = min(eff_tl, na.rm = T),
+            tr = max(eff_tr, na.rm = T)) %>%
+  ungroup() %>% 
+  mutate(dt = as.numeric(difftime(tr, tl, units = "days")))  %>% 
+  group_by(studykey) %>% 
+  mutate(min_tl = min(tl)) %>% 
+  ungroup() %>% 
+  mutate(studykey = factor(studykey) %>% 
+           forcats::fct_reorder(min_tl)) %>% 
+  filter(tl > "1900-01-01") %>% 
+  mutate(eff_loc = ifelse(is.na(eff_loc), "", eff_loc),
+         uid = str_c(studykey, eff_loc, sep = "-"))
+```
+
+
+## Papers
+There are `r nrow(metadata)` papers that cover `r params$countries`.
+
+```{r papers-descriptive}
+metadata %>% 
+  select(studykey, citation, title, pubyear, country) %>% 
+  kbl(booktabs = T) %>% 
+  kable_styling(full_width = F, font_size = 12) %>% 
+  scroll_box(
+    height = "500px",
+    box_css = "border: 1px solid #ddd; padding: 5px; ",
+    fixed_thead = TRUE
+  )
+
+```
+
+```{r fig-timings}
+#| fig.width=8,
+#| fig.height=4,
+#| fig.cap='Time coverage of studies'
+
+colors_admin_lev <- function() {
+  c("regional" = "blue", "national" = "green", "sub-national" = "black")  
+}
+
+pd <- ggstance::position_dodgev(height = .2)
+
+est_timings %>% 
+  ggplot(aes(y = studykey, color = admin_level, group = uid)) +
+  geom_point(aes(x = tl), position = pd) +
+  geom_point(aes(x = tr), pch = 2, position = pd) +
+  geom_linerange(aes(xmin = tl, xmax = tr), position = pd) +
+  scale_color_manual(values = colors_admin_lev()) +
+  scale_x_date(date_breaks = "5 years", date_labels = "%Y") +
+  theme_bw() +
+  labs(x = "study time", title = "Study timings") 
+```
+
+## Estimates
+
+There are `r nrow(est_data)` estimates that cover `r params$country`.
+
+### Estimate type descriptives
+
+Descriptive table of estimate characteristics.
+
+```{r estimates-descriptive}
+
+# Summary table of estimates
+est_data %>% 
+  select(exp_class, exp_temp_scale, exp_spatial_scale, out_class_metric, a_class, urban_rural_class, lag_class, rainy_season, 
+         inland_coast, hdi_cat, new_climatic_zone, admin_level) %>% 
+  # Drop missing levels in admin_level to simplify table
+  mutate(admin_level = forcats::fct_drop(admin_level)) %>% 
+  tbl_summary(by = "admin_level") %>%
+  modify_table_body(
+    mutate,
+    groupname_col = case_when(str_detect(variable, "exp_") ~ "Exposure",
+                              str_detect(variable, "out_") ~ "Outcome",
+                              str_detect(variable, "a_") ~ "Association measure",
+                              TRUE ~ "Covariate")
+  ) %>% 
+  modify_caption("Characteristics of association measures")
+```
+
+### Estimate value descriptives
+
+Descriptive table of estimate values.
+
+```{r estimates-values-descriptive}
+
+# Summary table of estimates
+est_data %>% 
+  mutate(a_uncert_value = as.character(a_uncert_value)) %>% 
+  select(exp_class, out_class_metric, a_class, a_effect, a_direction, a_uncert_significant) %>% 
+  tbl_strata(
+    strata = c("exp_class"), 
+    .combine_with = "tbl_stack",
+    ~.x %>%
+      tbl_strata(
+        strata = c("out_class_metric"),
+        ~.x %>%
+          tbl_summary(
+            by = a_class,
+            type = where(is.numeric) ~ "continuous"
+          ) %>%
+          modify_header(all_stat_cols() ~ "**{level}**")
+      )
+  ) %>% 
+  modify_caption("Value of association estimates by exposure class and outcome type")
+```
+
+### Estimate direction
+
+```{r fig-estimate-direction}
+#| fig.width=8,
+#| fig.height=5,
+#| fig.cap='Direction of estimates.'
+
+est_data %>% 
+  correct_effect(thresh = 0) %>%
+  filter(!(a_direction %in%  c("not stated", "none"))) %>% 
+  define_stat_significance() %>% 
+  simplify_direction_levels() %>% 
+  make_direction_counts(vars = c("exp_class", "admin_level")) %>% 
+  plot_direction_by_var(x_var = "admin_level", 
+                        do_facet = TRUE,
+                        facet_formula = ~ exp_class,
+                        facet_scales = "fixed")
+```
+
+### Estimate boxplots
+```{r fig-estimate-boxplot}
+#| fig.width=10,
+#| fig.height=7,
+#| fig.cap='Direction of estimates.'
+
+est_data %>% 
+  correct_effect(thresh = 0) %>%
+  filter(!(a_direction %in%  c("not stated", "none"))) %>% 
+  define_stat_significance() %>% 
+  simplify_direction_levels() %>% 
+  plot_effect_by_var(x_var = "admin_level", 
+                     do_facet = TRUE,
+                     facet_formula = a_class ~ exp_class,
+                     facet_scales = "fixed", 
+                     ylim = NULL)
+```
+
+### Estimate forest plot
+
+Plot values of estimates by type and exposure.
+
+```{r fig-estimate-forest}
+#| fig.width=11,
+#| fig.height=30,
+#| fig.cap='Forest plot of estimate values'
+
+forestplot <- function(df) {
+  
+  if (df$a_class[1] == "correlation") {
+    xlims <- c(-1, 1)
+  } else {
+    xlims <- c(-2, 2)
+  }
+  
+  df %>% 
+    mutate(uncertainty_missing = is.na(a_uncert_value) & is.na(a_uncert_lb)) %>% 
+    group_by(studykey) %>% 
+    mutate(rid = str_c(studykey, row_number(), sep = "-")) %>% 
+    ggplot(aes(x = a_effect, color = admin_level, alpha = uncertainty_missing)) +
+    geom_point(aes(y = rid)) +
+    geom_errorbarh(aes(y = rid, xmin = a_uncert_lb, xmax = a_uncert_ub), height = .2) +
+    geom_vline(data = tibble(x = 0), aes(xintercept = x), lty = 2, lwd = .5) +
+    ggh4x::facet_nested(out_class_metric + studykey ~ ., scales = "free", space = "free", switch = "y") +
+    scale_color_manual(values = colors_admin_lev()) +
+    scale_alpha_manual(values = c(1, .25)) +
+    coord_cartesian(xlim = xlims) +
+    theme_bw() +
+    theme(plot.background = element_rect(fill = "white", color = "white"),
+          panel.border = element_blank(),
+          panel.grid.y = element_blank(),
+          panel.grid.major.y = element_blank(),
+          axis.line.y = element_blank(),
+          axis.line.x = element_line())
+}
+
+all_fplots <- est_data %>% 
+  correct_effect(thresh = 0) %>%
+  filter(a_class %in% c("correlation", "log10_ratio")) %>% 
+  group_by(exp_class) %>% 
+  group_map(function(x, y) {
+    x <- bind_cols(x, y)
+    pl <- map(unique(x$a_class), 
+              function(.x) {
+                x %>% 
+                  filter(a_class == .x) %>% 
+                  forestplot() +
+                  labs(title = .x, x = .x) +
+                  # guides(color = "none") +
+                  theme(title = element_text(size = 9)) +
+                  theme(axis.text.y = element_blank(),
+                        axis.ticks.y = element_blank())
+              })
+    
+    plot_grid(
+      plotlist = list(ggdraw() +
+                        draw_label(x$exp_class[1], fontface = "bold", size = 16), 
+                      plot_grid(plotlist = pl, 
+                                nrow = 1)
+      ),
+      ncol = 1, 
+      rel_heights = c(0.2, 1))
+  })
+
+
+plot_grid(plotlist = all_fplots, 
+          ncol = 1)
+```
+
+
