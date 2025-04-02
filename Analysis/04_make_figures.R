@@ -21,14 +21,15 @@ plot_effect_sizes <- function(df) {
   df %>%  
     ggplot(aes(x = strata, y = mean)) +
     geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
-    geom_point(aes(color = out_class), position = pd) +
-    geom_errorbar(aes(ymin = q5, ymax = q95, color = out_class), 
+    geom_point(aes(color = exp_class, pch = out_class), position = pd) +
+    geom_errorbar(aes(ymin = q5, ymax = q95, color = exp_class, lty = out_class), 
                   position = pd, width = 0) +
     facet_grid(exp_class ~ what, scales = "free_x", space = "free_x") +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
     # scale_color_manual(values = c("blue", "red")) +
     ggthemes::scale_color_few("Dark") +
+    scale_linetype_manual(values = c(1, 6)) +
     labs(y = "effect size")
 }
 
@@ -38,6 +39,12 @@ p_effects <- plot_effect_sizes(es_effect)
 ggsave(p_effects, filename = "figures/meta_analysis_effect_sizes.png",
        width = 12, height = 6, dpi = 300)
 
+
+es_effect_dir <- get_effect_sizes(str_subset(res_files, "dir"))
+p_effects_dir <- plot_effect_sizes(es_effect_dir)
+
+ggsave(p_effects_dir, filename = "figures/meta_analysis_effect_sizes_direction.png",
+       width = 12, height = 6, dpi = 300)
 # p_dir <- plot_effect_sizes(es_direction) +
 #   scale_color_manual(values = c("blue", "red"))
 # 

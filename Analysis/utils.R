@@ -213,6 +213,11 @@ summarise_directions <- function(df,
                        labels = c("higher", "lower", "uncertain")))
 }
 
+vert_lab <- function(label){
+  paste0("<vertical-text>", label, "</vertical-text>")
+}
+
+
 add_doe_styling <- function(gtx) {
   fill_colors <- c("low" = "#FFACA6", "med" = "#FFC28C", "high" = "#D6FFC2")
   
@@ -239,6 +244,39 @@ add_doe_styling <- function(gtx) {
     tab_stub_indent(
       rows = everything(),
       indent = 3
+    ) %>% 
+    tab_options(
+      table.font.size = 10,
+      row_group.font.weight = "bold",
+      data_row.padding = px(1)
+    ) %>% 
+    opt_css(
+      css = "vertical-text {
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+      }"
+    ) %>% 
+    cols_label(
+      # Covariates
+      continent = md("Continent"),
+      admin_level = md("Admin level"),
+      out_class_case_presentation = md("Confirmation"),
+      # Exposures
+      precipitation = md(vert_lab("precipitation")),
+      temperature = md(vert_lab("temperature")),
+      flood = md(vert_lab("flood")),
+      drought = md(vert_lab("drought"))
+    ) %>%
+    tab_spanner(
+      label = "Exposures",
+      columns = c(precipitation, temperature, flood, drought)
+    ) %>%
+    tab_spanner(
+      label = "Study characteristics",
+      columns = c(continent, admin_level, out_class_case_presentation)
+    ) %>% 
+    sub_missing(
+      missing_text = "-"
     )
 }
 
