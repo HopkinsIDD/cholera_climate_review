@@ -149,7 +149,10 @@ make_dir_data <- function(df,
     arrange(dir_icon_lvls, score_cat, pubyear) %>% 
     group_by(dir_icon) %>% 
     mutate(bottom_line = row_number() == n()) %>% 
-    ungroup() %>% 
+    # ungroup() %>% 
+    # group_by(studykey, out_class_metric) %>%
+    # mutate(overall_dir = overall_dir[!is.na(overall_dir)][1]) %>% 
+    # ungroup() %>% 
     select(studykey, pubyear, exp_class, out_class_metric, all_of(covars), dir_icon, overall_dir, score_cat, bottom_line) %>% 
     filter(out_class_metric == outcome) %>% 
     pivot_wider(names_from = "exp_class",
@@ -184,4 +187,95 @@ gtExtras::gt_two_column_layout(tables = list(gt1, gt2),
                                zoom = 1)#,
 # vheight = 500)
 
+
+# Try by exposure ---------------------------------------------------------
+
+# Attempt at combining two exposures
+make_dir_data2 <- function(df, 
+                           exposure, 
+                           covars = c("continent", "admin_level", "out_class_case_presentation")) {
+  df %>% 
+    # select(studykey, pubyear, exp_class, out_class_metric, continent, admin_level, dir_icon, overall_dir) %>% 
+    mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
+    inner_join(scores) %>% 
+    arrange(dir_icon_lvls, score_cat, pubyear) %>% 
+    group_by(dir_icon) %>% 
+    mutate(bottom_line = row_number() == n()) %>% 
+    # ungroup() %>% 
+    # group_by(studykey, out_class_metric) %>%
+    # mutate(overall_dir = overall_dir[!is.na(overall_dir)][1]) %>% 
+    # ungroup() %>% 
+    select(studykey, pubyear, exp_class, out_class_metric, all_of(covars), dir_icon, overall_dir, score_cat, bottom_line) %>% 
+    filter(exp_class == exposure) %>% 
+    pivot_wider(names_from = "out_class_metric",
+                values_from = "dir_icon") %>% 
+    select(studykey, pubyear, all_of(covars), overall_dir, score_cat, bottom_line, 
+           incidence, occurrence) %>% 
+    mutate(overall_dir = overall_dir %>% forcats::fct_relevel("Positive", "Conflicting", "Negative")) %>% 
+    arrange(overall_dir, score_cat, desc(incidence), desc(occurrence), pubyear) %>% 
+    select(-pubyear)
+}
+
+dir_dat_precip <- make_dir_data2(df = dir_data, exposure = "precipitation")
+gt_p <- dir_dat_precip %>%
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("incidence", "occurrence")) %>% 
+  add_doe_styling2() %>% 
+  tab_header(title = "Precipitation")
+
+dir_dat_precip <- make_dir_data2(df = dir_data, exposure = "precipitation")
+gt_p <- dir_dat_precip %>%
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("incidence", "occurrence")) %>% 
+  add_doe_styling2() %>% 
+  tab_header(title = "Precipitation")
+gtsave(gt_p, filename = "figures/dirplot_precipitation.png")
+
+
+dir_dat_temp <- make_dir_data2(df = dir_data, exposure = "temperature")
+gt_t <- dir_dat_temp %>%
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("incidence", "occurrence")) %>% 
+  add_doe_styling2() %>% 
+  tab_header(title = "Temperature")
+gtsave(gt_t, filename = "figures/dirplot_temperature.png")
+
+
+dir_dat_flood <- make_dir_data2(df = dir_data, exposure = "flood")
+gt_f <- dir_dat_flood %>%
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("incidence", "occurrence")) %>% 
+  add_doe_styling2() %>% 
+  tab_header(title = "Flood")
+gtsave(gt_f, filename = "figures/dirplot_flood.png")
+
+dir_dat_drought <- make_dir_data2(df = dir_data, exposure = "drought")
+gt_d <- dir_dat_drought %>%
+  gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+  fmt_icon(c("incidence", "occurrence")) %>% 
+  add_doe_styling2() %>% 
+  tab_header(title = "Drougth")
+gtsave(gt_d, filename = "figures/dirplot_drought.png")
+
+library(patchwork)
+library(magick)
+
+# p_exposures <- wrap_table(gt_p) | (wrap_table(gt_t) / wrap_table(gt_f) / wrap_table(gt_d, panel = "full"))
+
+pp <- image_read("figures/dirplot_precipitation.png") %>% image_ggplot() + theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+pt <- image_read("figures/dirplot_temperature.png") %>% image_ggplot() + theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+pf <- image_read("figures/dirplot_flood.png") %>% image_ggplot() + theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+pd <- image_read("figures/dirplot_drought.png") %>% image_ggplot()+ theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+
+p_exposures <- (pp + pt + pf + pd) + 
+  plot_layout(
+    design = 
+      "AB
+    AB
+    AC
+    AD")
+
+ggsave(p_exposures, filename = "figures/eff_dir_plot_exposures_by_outcome.png",
+       width = 11,
+       height = 18)
 

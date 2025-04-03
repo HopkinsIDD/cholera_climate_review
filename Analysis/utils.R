@@ -280,6 +280,68 @@ add_doe_styling <- function(gtx) {
     )
 }
 
+
+
+
+add_doe_styling2 <- function(gtx) {
+  fill_colors <- c("low" = "#FFACA6", "med" = "#FFC28C", "high" = "#D6FFC2")
+  
+  gtx %>% 
+    # Add colors for score quality
+    tab_style(
+      style = list(cell_fill(color = fill_colors["low"])),
+      locations = cells_body(rows = score_cat == "low")
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = fill_colors["med"])),
+      locations = cells_body(rows = score_cat == "medium")
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = fill_colors["high"])),
+      locations = cells_body(rows = score_cat == "high")
+    ) %>% 
+    # Add bottom line for change in directions
+    tab_style(
+      style = cell_borders(sides = c("bottom"),  weight = px(0.5)),
+      locations = cells_body(rows = bottom_line == TRUE)
+    ) %>% 
+    cols_hide(c("score_cat", "bottom_line", "overall_dir"))  %>% 
+    tab_stub_indent(
+      rows = everything(),
+      indent = 3
+    ) %>% 
+    tab_options(
+      table.font.size = 10,
+      row_group.font.weight = "bold",
+      data_row.padding = px(1)
+    ) %>% 
+    opt_css(
+      css = "vertical-text {
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+      }"
+    ) %>% 
+    cols_label(
+      # Covariates
+      continent = md("Continent"),
+      admin_level = md("Admin level"),
+      out_class_case_presentation = md("Confirmation"),
+      # Outcomes
+      incidence = md(vert_lab("incidence")),
+      occurrence = md(vert_lab("occurrence"))
+    ) %>%
+    tab_spanner(
+      label = "Outcomes",
+      columns = c(incidence, occurrence)
+    ) %>%
+    tab_spanner(
+      label = "Study characteristics",
+      columns = c(continent, admin_level, out_class_case_presentation)
+    ) %>% 
+    sub_missing(
+      missing_text = "-"
+    )
+}
 # Plots -------------------------------------------------------------------
 
 
