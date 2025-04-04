@@ -1,0 +1,180 @@
+---
+title: "Systematic Review Summary Report"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+params:
+  data_path: "cholera_climate_review/Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
+---
+
+```{r setup, echo=F}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(purrr)
+source("cholera_climate_review/Analysis/utils.R")
+
+# Load the dataset from the file path
+data <- readr::read_csv(params$data_path)
+```
+
+## Exposure summary
+```{r Exposure Count Summary}
+# Total number of observational studies
+total_studies <- n_distinct(data$studykey)
+
+# Exposure counts
+exposure_counts <- data %>%
+  distinct(studykey, exp_class) %>%
+  count(exp_class, name = "n_studies")
+
+exposure_counts %>%   knitr::kable()
+```
+
+Out of the **`r total_studies`** included observational studies, there were:
+- **`r exposure_counts$n_studies[exposure_counts$exp_class == "precipitation"]`** precipitation studies  
+- **`r exposure_counts$n_studies[exposure_counts$exp_class == "temperature"]`** temperature studies  
+- **`r exposure_counts$n_studies[exposure_counts$exp_class == "flood"]`** flood studies  
+- **`r exposure_counts$n_studies[exposure_counts$exp_class == "drought"]`** drought studies
+
+## Study Locations by Continent
+```{r Study Locations by Region and Continent}
+region_table <- data %>%
+  distinct(studykey, eff_country, new_admin) %>%
+  rename(admin_level=new_admin) %>% 
+  add_continent(country_col = "eff_country") %>% 
+  distinct(studykey, continent) %>%
+  count(continent, name = "n_studies")
+region_table %>%
+  knitr::kable()
+
+```
+### Study Locations by Continent by exposure
+```{r}
+region_table_by_exposure <- data %>%
+  distinct(studykey, eff_country, new_admin,exp_class) %>%
+  rename(admin_level=new_admin) %>% 
+  add_continent(country_col = "eff_country") %>%
+  distinct(studykey, exp_class, continent) %>%
+  count(continent, exp_class, name = "n_studies")
+region_table_by_exposure %>%
+  knitr::kable()
+
+```
+
+## Spatial Scale Summary
+```{r Spatial scale summary}
+spatial_counts <- data %>%
+  distinct(studykey, new_admin) %>%
+  count(new_admin, name = "n_studies")
+
+spatial_counts %>%
+  knitr::kable()
+```
+### Spatial scale summary by exposure
+```{r}
+spatial_counts_by_exposure <- data %>%
+  distinct(studykey, new_admin,exp_class) %>%
+  count(new_admin, exp_class,name = "n_studies")
+
+spatial_counts_by_exposure %>%
+  knitr::kable()
+```
+
+
+### Study population summary
+```{r Study population summary}
+case_class <- data %>%
+  distinct(studykey, out_class_case_presentation) %>%
+  mutate(case_type = case_when(
+    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
+    out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "not stated" ~ "Unknown",
+    TRUE ~ "Mixed"
+  )) %>%
+  count(case_type, name = "n_studies")
+
+case_class %>%   knitr::kable()
+```
+
+
+## Study population summary by exposure
+```{r}
+case_class_by_exposure <- data %>%
+  distinct(studykey, out_class_case_presentation,exp_class) %>%
+  mutate(case_type = case_when(
+    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
+    out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "not stated" ~ "Unknown",
+    TRUE ~ "Mixed"
+  )) %>%
+  count(case_type, exp_class, name = "n_studies")
+
+case_class_by_exposure %>%   knitr::kable()
+
+```
+
+
+## Paper quality summary
+```{r Summarize statistics for data}
+stats_all <- generate_summary_stats(data)
+study_counts <- stats_all$study_counts
+stats_all$quality_summary %>% knitr::kable()
+```
+
+## Direction of effect and vote Counting Summary
+```{r}
+vote_counts <- stats_all$vote_counting_summary
+vote_counts %>%  knitr::kable()
+```
+
+### Temperature
+
+```{r}
+vc_temp <- vote_counts %>% filter(exposure == "temperature")
+vc_temp  %>%  knitr::kable()
+```
+
+- **Positive**: `r vc_temp$direction_counts[[1]]["positive"]`  
+- **Negative**: `r vc_temp$direction_counts[[1]]["negative"]`  
+- **No Effect**: `r vc_temp$direction_counts[[1]]["none"]`  
+- **Null hypothesis**: `r ifelse(vc_temp$p_value < 0.05, paste0("rejected (p = ", round(vc_temp$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_temp$p_value, 3), ")"))`
+
+### Precipitation
+
+```{r}
+vc_precip <- vote_counts %>% filter(exposure == "precipitation") 
+vc_precip  %>%  knitr::kable()
+
+```
+
+- **Positive**: `r vc_precip$direction_counts[[1]]["positive"]`  
+- **Negative**: `r vc_precip$direction_counts[[1]]["negative"]`  
+- **No Effect**: `r vc_precip$direction_counts[[1]]["none"]`  
+- **Null hypothesis**: `r ifelse(vc_precip$p_value < 0.05, paste0("rejected (p = ", round(vc_precip$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_precip$p_value, 3), ")"))`
+
+### Flood
+
+```{r}
+vc_flood <- vote_counts %>% filter(exposure == "flood") 
+vc_flood  %>%  knitr::kable()
+```
+
+- **Positive**: `r vc_flood$direction_counts[[1]] %>% pluck("positive", .default = 0)`  
+- **Negative**: `r vc_flood$direction_counts[[1]] %>% pluck("negative", .default = 0)`  
+- **No Effect**: `r vc_flood$direction_counts[[1]] %>% pluck("none", .default = 0)`  
+- **Null hypothesis**: `r ifelse(vc_flood$p_value < 0.05, paste0("rejected (p = ", round(vc_flood$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_flood$p_value, 3), ")"))`
+
+
+### Drought
+
+```{r}
+vc_drought <- vote_counts %>% filter(exposure == "drought")
+vc_drought  %>%  knitr::kable()
+```
+
+- **Positive**: `r vc_drought$direction_counts[[1]] %>% pluck("positive", .default = 0)`
+- **Negative**: `r vc_drought$direction_counts[[1]] %>% pluck("negative", .default = 0)`
+- **No Effect**: `r vc_drought$direction_counts[[1]] %>% pluck("none", .default = 0)`  
+- **Null hypothesis**: `r ifelse(vc_drought$p_value < 0.05, paste0("rejected (p = ", round(vc_drought$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_drought$p_value, 3), ")"))`
