@@ -188,7 +188,131 @@ get_all_out_class <- function() {
   c("occurrence", "incidence")
 }
 
-
+# Data summary -----------------------------------------------
+#' @name generate_summary_stats
+#' @description
+#' A function to summarize basic statistics for a given exposure and outcome combination
+#' @export
+#' @param data the processed extracted data 
+#' @param exposures the exposure over which the statistics are summarized (the default is NULL meaning across all exposure groups)
+#' @param outcomes the exposure over which the statistics are summarized (the default is NULL meaning across all outcome groups)
+#' @param direction_var the column name for the direction of the effect in the data
+#' @param study_id_var the column name for the unique identifier for the study in the data
+generate_summary_stats <- function(data,
+                                   exposures = NULL,
+                                   outcomes = NULL,
+                                   direction_var = "a_direction",
+                                   study_id_var = "studykey") {
+  
+  # 0. Calculate the quality score as tot_score
+  data <- data %>%
+    mutate(
+      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+      exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
+      exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
+      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
+      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+      out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
+      out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
+      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+      a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
+      tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
+        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
+        a_class_tf + a_adjusted_tf + a_uncert_def_tf
+    )
+  
+  # 1. Location-time product per study
+  location_time <- data %>% mutate(year = substr(eff_tl, 1, 4)) %>% group_by(!!sym(study_id_var)) %>%
+    summarise(unique_location_time_comb = n_distinct(eff_loc) * n_distinct(year)) %>%
+    ungroup()
+  
+  # 2. Study counts by exp_class
+  study_counts <- data %>% distinct(!!sym(study_id_var), exp_class) %>%
+  count(exp_class, name = "n_studies")
+  
+  # 3. Quality summary by exposure class
+  quality_summary <- data %>% distinct(!!sym(study_id_var), exp_class, tot_score) %>%
+    count(exp_class, tot_score, name = "n_studies")
+  
+  # 4. Direction of effect by quality score
+  direction_by_quality <- data %>% count(tot_score, !!sym(direction_var)) %>%
+  pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
+  
+  # If exposure / outcome is specified in the parameter:
+  filtered_data <- data
+  if (!is.null(exposures)) {
+    filtered_data <- filtered_data %>% filter(exp_class %in% exposures)
+  }
+  if (!is.null(outcomes)) {
+    filtered_data <- filtered_data %>% filter(out_class_metric %in% outcomes)
+  }
+  
+  # 5. Vote counting
+  vote_combos <- expand_grid(
+    exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
+    outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
+  )
+  
+  vote_counting_summary <- vote_combos %>%
+    rowwise() %>%
+    mutate(result = 
+             list({ ## Create a list to store vote_counting_summary
+      ## Subset the data for a given exposure and outcome combinations.
+      subdata <- filtered_data %>%
+        filter(exp_class == exposure,
+               out_class_metric == outcome,
+               !!sym(direction_var) %in% c("positive", "negative", "none"))
+      ## Sum the total number of papers for each effect direction
+      vote_counts <- subdata %>%
+        count(!!sym(direction_var)) %>%
+        pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
+      ## Total number of papers
+      total <- sum(vote_counts)
+      if (total == 0) {
+        tibble(
+          direction = NA_character_,
+          p_value = NA_real_,
+          total_votes = 0,
+          direction_counts = list(vote_counts)
+        )
+      } else {
+        ## Identify the effect direction with the maximum number of estimates
+        max_dir <- vote_counts %>%
+          select(-any_of("none")) %>%
+          unlist() %>%
+          which.max() %>%
+          names()
+        
+        ## Implement binomial test 
+        p_val <- binom.test(vote_counts[[max_dir]], total, p = 0.5, alternative = "greater")$p.value
+        
+        tibble(
+          direction = max_dir,
+          p_value = p_val,
+          total_votes = total,
+          direction_counts = list(vote_counts)
+        )
+      }
+    })) %>%
+    unnest(result)
+  
+  # 6. Summary of studies by exposure-outcome combinations
+  exposure_outcome_summary <- filtered_data %>%
+    distinct(!!sym(study_id_var), exp_class, out_class_metric) %>%
+    count(exp_class, out_class_metric, name = "n_studies")
+  
+  # Final output
+  list(
+    location_time = location_time,
+    study_counts = study_counts,
+    quality_summary = quality_summary,
+    direction_by_quality = direction_by_quality,
+    vote_counting_summary = vote_counting_summary,
+    exposure_outcome_summary = exposure_outcome_summary
+  )
+}
 
 # Direction of effect plot ------------------------------------------------
 
@@ -748,3 +872,4 @@ get_poststrat <- function(res_files) {
              out_class = out_class)
   })
 }
+
