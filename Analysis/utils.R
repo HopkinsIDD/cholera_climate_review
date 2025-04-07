@@ -233,8 +233,15 @@ generate_summary_stats <- function(data,
   count(exp_class, name = "n_studies")
   
   # 3. Quality summary by exposure class
+  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
+                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
+                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
+                    "a_adjusted", "a_uncert_def")
   quality_summary <- data %>% distinct(!!sym(study_id_var), exp_class, tot_score) %>%
-    count(exp_class, tot_score, name = "n_studies")
+    group_by(!!sym(study_id_var), exp_class) %>% 
+    summarize(avg_tot_score_est = mean(tot_score))%>% 
+    ungroup() %>% 
+    count(exp_class, avg_tot_score_est, name = "n_studies")
   
   # 4. Direction of effect by quality score
   direction_by_quality <- data %>% count(tot_score, !!sym(direction_var)) %>%
@@ -258,44 +265,48 @@ generate_summary_stats <- function(data,
   vote_counting_summary <- vote_combos %>%
     rowwise() %>%
     mutate(result = 
-             list({ ## Create a list to store vote_counting_summary
-      ## Subset the data for a given exposure and outcome combinations.
+             list({ # Create a list to store vote_counting_summary
+      # Subset the data for a given exposure and outcome combinations.
       subdata <- filtered_data %>%
         filter(exp_class == exposure,
-               out_class_metric == outcome,
-               !!sym(direction_var) %in% c("positive", "negative", "none"))
-      ## Sum the total number of papers for each effect direction
-      vote_counts <- subdata %>%
-        count(!!sym(direction_var)) %>%
-        pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
-      ## Total number of papers
-      total <- sum(vote_counts)
-      if (total == 0) {
+               out_class_metric == outcome)
+      
+      if (nrow(subdata) == 0) {
         tibble(
           direction = NA_character_,
           p_value = NA_real_,
           total_votes = 0,
-          direction_counts = list(vote_counts)
+          direction_counts = list(tibble())
         )
       } else {
-        ## Identify the effect direction with the maximum number of estimates
-        max_dir <- vote_counts %>%
-          select(-any_of("none")) %>%
-          unlist() %>%
-          which.max() %>%
-          names()
+        # Summarize direction for each paper
+        dir_summary <- summarise_directions(subdata, thresh = 0.7)
         
-        ## Implement binomial test 
-        p_val <- binom.test(vote_counts[[max_dir]], total, p = 0.5, alternative = "greater")$p.value
+        # Count direction categories
+        vote_counts <- subdata %>%
+          count(!!sym(direction_var)) %>%
+          pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
+        
+        # Get positive and negative counts for binomial test
+        n_pos <- vote_counts[["positive"]] %||% 0
+        n_neg <- vote_counts[["negative"]] %||% 0
+        n_dir <- n_pos + n_neg
+        
+        # Run binomial test if there are any directional votes
+        p_val <- if (n_dir > 0) {
+          binom.test(n_pos, n_dir, p = 0.5, alternative = "greater")$p.value
+        } else {
+          NA_real_
+        }
         
         tibble(
-          direction = max_dir,
+          direction = as.character(dir_summary$overall_dir),
           p_value = p_val,
-          total_votes = total,
+          total_votes = dir_summary$N,
           direction_counts = list(vote_counts)
         )
       }
-    })) %>%
+             })) %>%
     unnest(result)
   
   # 6. Summary of studies by exposure-outcome combinations
