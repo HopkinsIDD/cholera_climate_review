@@ -14,77 +14,221 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(purrr)
 source("cholera_climate_review/Analysis/utils.R")
+library(gtsummary)
+library(lubridate)
+library(gt)
+
 
 # Load the dataset from the file path
 data <- readr::read_csv(params$data_path)
 ```
 
-## Exposure summary
-```{r Exposure Count Summary}
+# Exposure summary
+```{r}
 # Total number of observational studies
 total_studies <- n_distinct(data$studykey)
 
-# Exposure counts
 exposure_counts <- data %>%
   distinct(studykey, exp_class) %>%
-  count(exp_class, name = "n_studies")
+  count(exp_class, name = "n_studies") %>%
+  add_row(exp_class = "Total", n_studies = total_studies)
 
-exposure_counts %>%   knitr::kable()
+exposure_counts %>%
+  rename(Exposure = exp_class, `Number of Studies` = n_studies) %>%
+  pivot_wider(names_from = Exposure, values_from = `Number of Studies`) %>%
+  mutate(Metric = "Number of Studies") %>%
+  relocate(Metric) %>%
+  gt() %>%
+  tab_header(title = "Exposure Count Summary") %>%
+  fmt_number(columns = -Metric, decimals = 0)
+
 ```
 
-Out of the **`r total_studies`** included observational studies, there were:
-- **`r exposure_counts$n_studies[exposure_counts$exp_class == "precipitation"]`** precipitation studies  
-- **`r exposure_counts$n_studies[exposure_counts$exp_class == "temperature"]`** temperature studies  
-- **`r exposure_counts$n_studies[exposure_counts$exp_class == "flood"]`** flood studies  
-- **`r exposure_counts$n_studies[exposure_counts$exp_class == "drought"]`** drought studies
+# Outcome summary
+```{r}
+# Outcome counts
+outcome_counts <- data %>%
+  distinct(studykey, out_class_metric) %>%
+  count(out_class_metric, name = "n_studies") %>%
+  add_row(out_class_metric = "Total", n_studies = total_studies)
 
-## Study Locations by Continent
-```{r Study Locations by Region and Continent}
+outcome_counts %>%
+  rename(`Outcome` = out_class_metric, `Number of Studies` = n_studies) %>%
+  gt() %>%
+  tab_header(title = "Overall Outcome Summary") %>%
+  fmt_number(columns = `Number of Studies`, decimals = 0)
+
+```
+
+## Outcome summary by exposure
+```{r}
+outcome_tbl <- data %>%
+  distinct(studykey, out_class_metric, exp_class) %>%
+  count(out_class_metric, exp_class) %>%
+  pivot_wider(
+    names_from = exp_class,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  rename(Outcome = out_class_metric)
+
+outcome_tbl %>%
+  gt() %>%
+  tab_header(title = "Outcome Summary by Exposure") %>%
+  fmt_number(columns = -Outcome, decimals = 0)
+
+```
+
+# Study period summary 
+```{r}
+period_table <- data %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>% 
+  mutate(study_year_tl = lubridate::year(eff_tl),
+         study_year_tr = lubridate::year(eff_tr)) %>% 
+  mutate(duration = as.numeric(eff_tr-eff_tl)) %>% 
+  mutate(study_duration = case_when(
+    duration <= 366 ~ "Less than a year",
+    duration <=366*5 ~ "1-5 years",
+    TRUE ~ "> 5 year"
+  )) 
+
+```
+
+## Study period coverage 
+```{r}
+period_table %>%
+  summarize(
+    `Earliest Study Year` = min(study_year_tl, na.rm = TRUE),
+    `Latest Study Year` = max(study_year_tr, na.rm = TRUE)
+  ) %>%
+  gt() %>%
+  tab_header(title = "Overall Study Period Coverage") %>%
+  fmt_number(columns = everything(), decimals = 0)
+```
+### Study period by exposure
+```{r}
+period_table %>% 
+  group_by(exp_class) %>% 
+  summarize(
+    `Earliest Study Year` = min(study_year_tl, na.rm = TRUE),
+    `Latest Study Year` = max(study_year_tr, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  rename(Exposure = exp_class) %>%
+  pivot_longer(cols = c(`Earliest Study Year`, `Latest Study Year`), names_to = "Metric", values_to = "Value") %>%
+  pivot_wider(names_from = Exposure, values_from = Value) %>%
+  gt() %>%
+  tab_header(title = "Study Period by Exposure") %>%
+  fmt_number(columns = -Metric, decimals = 0)
+
+```
+
+## Study period length
+```{r}
+period_table %>%
+  distinct(studykey, study_duration) %>%
+  count(study_duration, name = "n_studies") %>%
+  rename(`Study Duration` = study_duration, `Number of Studies` = n_studies) %>%
+  gt() %>%
+  tab_header(title = "Study Duration Summary") %>%
+  fmt_number(columns = `Number of Studies`, decimals = 0)
+
+```
+
+### Study period length by exposure
+```{r}
+period_tbl <- period_table %>% 
+  distinct(studykey,study_duration,exp_class) %>%
+  count(study_duration, exp_class) %>%
+  pivot_wider(
+    names_from = exp_class,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  rename(`Study duration` = study_duration)
+
+period_tbl %>%
+  gt() %>%
+  tab_header(title = "Study Duration Summary by Exposure") %>%
+  fmt_number(columns = -`Study duration`, decimals = 0)
+
+```
+
+# Study locations summary 
+## Study locations by continent
+```{r}
 region_table <- data %>%
   distinct(studykey, eff_country, new_admin) %>%
-  rename(admin_level=new_admin) %>% 
-  add_continent(country_col = "eff_country") %>% 
+  rename(admin_level = new_admin) %>%
+  add_continent(country_col = "eff_country") %>%
   distinct(studykey, continent) %>%
   count(continent, name = "n_studies")
+
 region_table %>%
-  knitr::kable()
+  rename(`Continent` = continent, `Number of Studies` = n_studies) %>%
+  gt() %>%
+  tab_header(title = "Study Locations by Continent") %>%
+  fmt_number(columns = `Number of Studies`, decimals = 0)
 
 ```
-### Study Locations by Continent by exposure
+
+### Study locations by continent by exposure
 ```{r}
-region_table_by_exposure <- data %>%
+continent_tbl <- data %>%
   distinct(studykey, eff_country, new_admin,exp_class) %>%
   rename(admin_level=new_admin) %>% 
   add_continent(country_col = "eff_country") %>%
-  distinct(studykey, exp_class, continent) %>%
-  count(continent, exp_class, name = "n_studies")
-region_table_by_exposure %>%
-  knitr::kable()
+  distinct(exp_class, studykey, continent) %>%
+  count(continent, exp_class) %>%
+  pivot_wider(
+    names_from = exp_class,
+    values_from = n,
+    values_fill = 0
+  ) %>% 
+  rename(Continent = continent)
+
+continent_tbl %>%
+  gt() %>%
+  tab_header(title = "Study Locations by Continent and Exposure") %>%
+  fmt_number(columns = -Continent, decimals = 0)
 
 ```
 
-## Spatial Scale Summary
-```{r Spatial scale summary}
+## Spatial scale summary
+```{r}
 spatial_counts <- data %>%
   distinct(studykey, new_admin) %>%
   count(new_admin, name = "n_studies")
 
 spatial_counts %>%
-  knitr::kable()
+  rename(`Spatial Scale` = new_admin, `Number of Studies` = n_studies) %>%
+  gt() %>%
+  tab_header(title = "Spatial Scale Summary") %>%
+  fmt_number(columns = `Number of Studies`, decimals = 0)
+
 ```
+
 ### Spatial scale summary by exposure
 ```{r}
-spatial_counts_by_exposure <- data %>%
+spatial_scale_tbl <- data %>%
   distinct(studykey, new_admin,exp_class) %>%
-  count(new_admin, exp_class,name = "n_studies")
+  count(new_admin, exp_class) %>%
+  pivot_wider(
+    names_from = exp_class,
+    values_from = n,
+    values_fill = 0
+  ) %>% 
+  rename("Admin level" = new_admin)
 
-spatial_counts_by_exposure %>%
-  knitr::kable()
+spatial_scale_tbl %>%
+  gt() %>%
+  tab_header(title = "Spatial Scale Summary by Exposure") %>%
+  fmt_number(columns = -`Admin level`, decimals = 0)
 ```
 
 
-### Study population summary
-```{r Study population summary}
+# Study population summary
+```{r}
 case_class <- data %>%
   distinct(studykey, out_class_case_presentation) %>%
   mutate(case_type = case_when(
@@ -95,45 +239,108 @@ case_class <- data %>%
   )) %>%
   count(case_type, name = "n_studies")
 
-case_class %>%   knitr::kable()
+case_class %>%
+  rename(`Case Type` = case_type, `Number of Studies` = n_studies) %>%
+  gt() %>%
+  tab_header(title = "Study Population by Case Type") %>%
+  fmt_number(columns = `Number of Studies`, decimals = 0)
+
 ```
 
 
 ## Study population summary by exposure
 ```{r}
-case_class_by_exposure <- data %>%
+case_class_tbl <- data %>%
   distinct(studykey, out_class_case_presentation,exp_class) %>%
   mutate(case_type = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
-  )) %>%
-  count(case_type, exp_class, name = "n_studies")
+  )) %>% 
+  count(case_type, exp_class) %>%
+  pivot_wider(
+    names_from = exp_class,
+    values_from = n,
+    values_fill = 0
+  ) %>% 
+  rename("Case type" = case_type)
 
-case_class_by_exposure %>%   knitr::kable()
-
+case_class_tbl %>%
+  gt() %>%
+  tab_header(title = "Study Population by Case Type and Exposure") %>%
+  fmt_number(columns = -`Case type`, decimals = 0)
 ```
 
 
-## Paper quality summary
-```{r Summarize statistics for data}
+# Paper quality distribution
+```{r}
 stats_all <- generate_summary_stats(data)
 study_counts <- stats_all$study_counts
-stats_all$quality_summary %>% knitr::kable()
+stats_all$quality_summary %>%
+  group_by(exp_class) %>% 
+  summarize(
+    `Mean (IQR)` = paste0(
+      round(mean(avg_tot_score_est, na.rm = TRUE), 2), 
+      " (", 
+      quantile(avg_tot_score_est, 0.25, na.rm = TRUE), 
+      "-", 
+      quantile(avg_tot_score_est, 0.75, na.rm = TRUE), 
+      ")"
+    ),
+    Min = as.character(round(min(avg_tot_score_est),2)),
+    Max = as.character(round(max(avg_tot_score_est),2)),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = -exp_class, names_to = "Metric", values_to = "Value") %>%
+  pivot_wider(names_from = exp_class, values_from = Value) %>%
+  gt::gt() %>%
+  gt::tab_header(title = "Distribution of Total Quality Score at the Paper level")
 ```
 
-## Direction of effect and vote Counting Summary
+
+# Paper quality summary
+```{r}
+score_summary_by_exp <- stats_all$quality_summary %>%
+  mutate(
+    score_range = case_when(
+      avg_tot_score_est == 11 ~ "Score = 11",
+      avg_tot_score_est == 5 ~ "Score = 5",
+      avg_tot_score_est >5 & avg_tot_score_est < 11 ~ "Score >5 – <11"
+    )
+  ) %>%
+  group_by(exp_class, score_range) %>%
+  summarize(n = sum(n_studies, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  rename(`Score Range` = score_range)
+
+score_summary_by_exp %>%
+  gt() %>%
+  tab_header(title = "Summary of Total Quality Scores by Exposure") %>%
+  fmt_number(columns = -`Score Range`, decimals = 0)
+
+```
+
+# Direction of effect and vote counting summary
 ```{r}
 vote_counts <- stats_all$vote_counting_summary
-vote_counts %>%  knitr::kable()
 ```
 
-### Temperature
+## Temperature
 
 ```{r}
 vc_temp <- vote_counts %>% filter(exposure == "temperature")
-vc_temp  %>%  knitr::kable()
+
+vc_temp %>%
+  select(-exposure) %>%  # optional: drop exposure column if redundant
+  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
+  gt() %>%
+  tab_header(title = "Vote Counting Summary for Temperature") %>%
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 2
+  )
+
 ```
 
 - **Positive**: `r vc_temp$direction_counts[[1]]["positive"]`  
@@ -141,11 +348,20 @@ vc_temp  %>%  knitr::kable()
 - **No Effect**: `r vc_temp$direction_counts[[1]]["none"]`  
 - **Null hypothesis**: `r ifelse(vc_temp$p_value < 0.05, paste0("rejected (p = ", round(vc_temp$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_temp$p_value, 3), ")"))`
 
-### Precipitation
+## Precipitation
 
 ```{r}
-vc_precip <- vote_counts %>% filter(exposure == "precipitation") 
-vc_precip  %>%  knitr::kable()
+vc_precip <- vote_counts %>% filter(exposure == "precipitation")
+
+vc_precip %>%
+  select(-exposure) %>%  # optional: drop exposure column if redundant
+  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
+  gt() %>%
+  tab_header(title = "Vote Counting Summary for Precipitation") %>%
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 2
+  )
 
 ```
 
@@ -154,11 +370,20 @@ vc_precip  %>%  knitr::kable()
 - **No Effect**: `r vc_precip$direction_counts[[1]]["none"]`  
 - **Null hypothesis**: `r ifelse(vc_precip$p_value < 0.05, paste0("rejected (p = ", round(vc_precip$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_precip$p_value, 3), ")"))`
 
-### Flood
+## Flood
 
 ```{r}
-vc_flood <- vote_counts %>% filter(exposure == "flood") 
-vc_flood  %>%  knitr::kable()
+vc_flood <- vote_counts %>% filter(exposure == "flood")
+
+vc_flood %>%
+  select(-exposure) %>%  # optional: drop exposure column if redundant
+  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
+  gt() %>%
+  tab_header(title = "Vote Counting Summary for Flood") %>%
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 2
+  )
 ```
 
 - **Positive**: `r vc_flood$direction_counts[[1]] %>% pluck("positive", .default = 0)`  
@@ -167,11 +392,20 @@ vc_flood  %>%  knitr::kable()
 - **Null hypothesis**: `r ifelse(vc_flood$p_value < 0.05, paste0("rejected (p = ", round(vc_flood$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_flood$p_value, 3), ")"))`
 
 
-### Drought
+## Drought
 
 ```{r}
 vc_drought <- vote_counts %>% filter(exposure == "drought")
-vc_drought  %>%  knitr::kable()
+
+vc_drought %>%
+  select(-exposure) %>%  # optional: drop exposure column if redundant
+  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
+  gt() %>%
+  tab_header(title = "Vote Counting Summary for Drought") %>%
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 2
+  )
 ```
 
 - **Positive**: `r vc_drought$direction_counts[[1]] %>% pluck("positive", .default = 0)`
