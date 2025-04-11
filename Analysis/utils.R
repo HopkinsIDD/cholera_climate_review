@@ -262,37 +262,45 @@ generate_summary_stats <- function(data,
     outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
   )
   
+  # 6. Summarize study-level directions
+  study_level_dir <- filtered_data %>%
+    group_by(!!sym(study_id_var)) %>%
+    summarise_directions(thresh = 0.7) %>%
+    select(!!sym(study_id_var), overall_dir)
+  
+  # 7. Vote counting summary using study-level directions
+  vote_combos <- expand_grid(
+    exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
+    outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
+  )
+  
   vote_counting_summary <- vote_combos %>%
     rowwise() %>%
-    mutate(result = 
-             list({ # Create a list to store vote_counting_summary
-      # Subset the data for a given exposure and outcome combinations.
+    mutate(result = list({
       subdata <- filtered_data %>%
-        filter(exp_class == exposure,
-               out_class_metric == outcome)
+        filter(exp_class == exposure, out_class_metric == outcome)
       
       if (nrow(subdata) == 0) {
         tibble(
           direction = NA_character_,
           p_value = NA_real_,
-          total_votes = 0,
-          direction_counts = list(tibble())
+          total_higher_votes = 0,
+          total_lower_votes = 0,
+          total_uncertain_votes = 0
         )
       } else {
-        # Summarize direction for each paper
-        dir_summary <- summarise_directions(subdata, thresh = 0.7)
+        study_dir_sub <- study_level_dir %>%
+          filter(!!sym(study_id_var) %in% subdata[[study_id_var]])
         
-        # Count direction categories
-        vote_counts <- subdata %>%
-          count(!!sym(direction_var)) %>%
-          pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
+        vote_counts <- study_dir_sub %>%
+          count(overall_dir) %>%
+          pivot_wider(names_from = overall_dir, values_from = n, values_fill = 0)
         
-        # Get positive and negative counts for binomial test
-        n_pos <- vote_counts[["positive"]] %||% 0
-        n_neg <- vote_counts[["negative"]] %||% 0
+        n_pos <- vote_counts[["higher"]] %||% 0
+        n_neg <- vote_counts[["lower"]] %||% 0
+        n_uncertain <- vote_counts[["uncertain"]] %||% 0
         n_dir <- n_pos + n_neg
         
-        # Run binomial test if there are any directional votes
         p_val <- if (n_dir > 0) {
           binom.test(n_pos, n_dir, p = 0.5, alternative = "greater")$p.value
         } else {
@@ -300,21 +308,24 @@ generate_summary_stats <- function(data,
         }
         
         tibble(
-          direction = as.character(dir_summary$overall_dir),
+          direction = if (n_dir == 0) "uncertain" else {
+            if (n_pos / n_dir >= 0.7) "higher" else if (n_neg / n_dir >= 0.7) "lower" else "uncertain"
+          },
           p_value = p_val,
-          total_votes = dir_summary$N,
-          direction_counts = list(vote_counts)
+          total_higher_votes = n_pos,
+          total_lower_votes = n_neg,
+          total_uncertain_votes = n_uncertain
         )
       }
-             })) %>%
+    })) %>%
     unnest(result)
   
-  # 6. Summary of studies by exposure-outcome combinations
+  # 8. Summary of studies by exposure-outcome combinations
   exposure_outcome_summary <- filtered_data %>%
     distinct(!!sym(study_id_var), exp_class, out_class_metric) %>%
     count(exp_class, out_class_metric, name = "n_studies")
   
-  # Final output
+  # 9. Final output
   list(
     location_time = location_time,
     study_counts = study_counts,
