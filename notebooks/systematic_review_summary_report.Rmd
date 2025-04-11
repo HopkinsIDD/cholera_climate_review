@@ -3,6 +3,7 @@ title: "Systematic Review Summary Report"
 output:
   html_document:
     toc: true
+    toc_float: true
     toc_depth: 2
     number_sections: true
 params:
@@ -13,7 +14,7 @@ params:
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(purrr)
-source("cholera_climate_review/Analysis/utils.R")
+source("Cholera/cholera_climate_review/Analysis/utils.R")
 library(gtsummary)
 library(lubridate)
 library(gt)
@@ -25,7 +26,7 @@ data <- readr::read_csv(params$data_path)
 
 # Exposure summary
 ```{r}
-# Total number of observational studies
+# Total number of studies
 total_studies <- n_distinct(data$studykey)
 
 exposure_counts <- data %>%
@@ -87,10 +88,12 @@ period_table <- data %>%
          study_year_tr = lubridate::year(eff_tr)) %>% 
   mutate(duration = as.numeric(eff_tr-eff_tl)) %>% 
   mutate(study_duration = case_when(
-    duration <= 366 ~ "Less than a year",
-    duration <=366*5 ~ "1-5 years",
-    TRUE ~ "> 5 year"
-  )) 
+    duration <= 366 ~ "<1 year",
+    duration <= 366*2 ~ "1-2 years",
+    duration <= 366*5 ~ "2-5 years",
+    duration <= 366*10 ~ "5-10 years",
+    TRUE ~ ">10 years"
+  ))
 
 ```
 
@@ -343,11 +346,6 @@ vc_temp %>%
 
 ```
 
-- **Positive**: `r vc_temp$direction_counts[[1]]["positive"]`  
-- **Negative**: `r vc_temp$direction_counts[[1]]["negative"]`  
-- **No Effect**: `r vc_temp$direction_counts[[1]]["none"]`  
-- **Null hypothesis**: `r ifelse(vc_temp$p_value < 0.05, paste0("rejected (p = ", round(vc_temp$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_temp$p_value, 3), ")"))`
-
 ## Precipitation
 
 ```{r}
@@ -364,12 +362,6 @@ vc_precip %>%
   )
 
 ```
-
-- **Positive**: `r vc_precip$direction_counts[[1]]["positive"]`  
-- **Negative**: `r vc_precip$direction_counts[[1]]["negative"]`  
-- **No Effect**: `r vc_precip$direction_counts[[1]]["none"]`  
-- **Null hypothesis**: `r ifelse(vc_precip$p_value < 0.05, paste0("rejected (p = ", round(vc_precip$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_precip$p_value, 3), ")"))`
-
 ## Flood
 
 ```{r}
@@ -385,13 +377,6 @@ vc_flood %>%
     decimals = 2
   )
 ```
-
-- **Positive**: `r vc_flood$direction_counts[[1]] %>% pluck("positive", .default = 0)`  
-- **Negative**: `r vc_flood$direction_counts[[1]] %>% pluck("negative", .default = 0)`  
-- **No Effect**: `r vc_flood$direction_counts[[1]] %>% pluck("none", .default = 0)`  
-- **Null hypothesis**: `r ifelse(vc_flood$p_value < 0.05, paste0("rejected (p = ", round(vc_flood$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_flood$p_value, 3), ")"))`
-
-
 ## Drought
 
 ```{r}
@@ -408,7 +393,212 @@ vc_drought %>%
   )
 ```
 
-- **Positive**: `r vc_drought$direction_counts[[1]] %>% pluck("positive", .default = 0)`
-- **Negative**: `r vc_drought$direction_counts[[1]] %>% pluck("negative", .default = 0)`
-- **No Effect**: `r vc_drought$direction_counts[[1]] %>% pluck("none", .default = 0)`  
-- **Null hypothesis**: `r ifelse(vc_drought$p_value < 0.05, paste0("rejected (p = ", round(vc_drought$p_value, 3), ")"), paste0("not rejected (p = ", round(vc_drought$p_value, 3), ")"))`
+# Table 1
+```{r}
+# Total counts of the papers
+total_counts <- data %>%
+  distinct(studykey, exp_class) %>%
+  count(exp_class) %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  bind_cols(
+    data %>% distinct(studykey) %>% count(.) %>% rename(Total = n)
+  )
+
+# Refine study duration categories
+period_table <- data %>%
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+  mutate(study_year_tl = lubridate::year(eff_tl),
+         study_year_tr = lubridate::year(eff_tr)) %>%
+  mutate(duration = as.numeric(eff_tr - eff_tl)) %>%
+  mutate(study_duration = case_when(
+    duration <= 366 ~ "<1 year",
+    duration <= 366*2 ~ "1-2 years",
+    duration <= 366*5 ~ "2-5 years",
+    duration <= 366*10 ~ "5-10 years",
+    TRUE ~ ">10 years"
+  ))
+
+# Helper function: generate summary table with Total column
+make_summary_table1 <- function(var, rename_var = NULL) {
+  tmp_exp <- data %>%
+    rename(admin_level = new_admin) %>%
+    add_continent(country_col = "eff_country") %>%
+    mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
+    distinct(studykey, exp_class, .data[[var]]) %>%
+    count(.data[[var]], exp_class) %>%
+    pivot_wider(names_from = exp_class, values_from = n, values_fill = 0)
+
+  tmp_total <- data %>%
+    rename(admin_level = new_admin) %>%
+    add_continent(country_col = "eff_country") %>%
+    mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
+    distinct(studykey, .data[[var]]) %>%
+    count(.data[[var]]) %>%
+    rename(Total = n)
+
+  tmp <- tmp_exp %>%
+    left_join(tmp_total, by = var)
+
+  if (!is.null(rename_var)) {
+    tmp <- tmp %>% rename(!!rename_var := .data[[var]])
+  }
+  return(tmp)
+}
+
+# Clean outcome variable and generate outcome counts table
+outcome_counts_by_exp <- data %>%
+  mutate(out_class_metric = tolower(trimws(out_class_metric))) %>%
+  distinct(studykey, exp_class, out_class_metric) %>%
+  count(exp_class, out_class_metric) %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  left_join(
+    data %>%
+      mutate(out_class_metric = tolower(trimws(out_class_metric))) %>%
+      distinct(studykey, out_class_metric) %>%
+      count(out_class_metric) %>%
+      rename(Total = n),
+    by = "out_class_metric"
+  )
+nrow(outcome_counts_by_exp)
+
+# Outcome temporal resolution table
+outcome_temporal_scale_tbl <- data %>%
+  distinct(studykey, exp_class, out_temp_scale) %>%
+  count(exp_class, out_temp_scale) %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  left_join(
+    data %>% distinct(studykey, out_temp_scale) %>% count(out_temp_scale) %>% rename(Total = n),
+    by = "out_temp_scale"
+  ) %>%
+  mutate(out_temp_scale = factor(out_temp_scale,
+                                 levels = c(0, 1, 2, 3, 4, 99),
+                                 labels = c("0 day",
+                                            "1-14 days",
+                                            "15-30 days",
+                                            "31-365 days",
+                                            ">365 days",
+                                            "missing"))) %>%
+  arrange(out_temp_scale) %>%
+  rename(Category = out_temp_scale)
+
+# Generate each characteristic summary table
+region_tbl <- make_summary_table1("continent", "Category")
+spatial_scale_tbl <- make_summary_table1("admin_level", "Category")
+
+duration_tbl <- period_table %>%
+  distinct(studykey, exp_class, study_duration) %>%
+  count(study_duration, exp_class) %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  left_join(
+    period_table %>% distinct(studykey, study_duration) %>% count(study_duration) %>% rename(Total = n),
+    by = "study_duration"
+  ) %>%
+  rename(Category = study_duration)
+
+pop_tbl <- data %>%
+  mutate(out_class_case_presentation = tolower(trimws(out_class_case_presentation))) %>%
+  distinct(studykey, exp_class, out_class_case_presentation) %>%
+  mutate(Category = case_when(
+    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
+    out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "not stated" ~ "Unknown",
+    TRUE ~ "Mixed"
+  )) %>%
+  count(Category, exp_class) %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  left_join(
+    data %>%
+      mutate(out_class_case_presentation = tolower(trimws(out_class_case_presentation))) %>%
+      mutate(Category = case_when(
+        out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
+        out_class_case_presentation == "suspected cases only" ~ "Suspected",
+        out_class_case_presentation == "not stated" ~ "Unknown",
+        TRUE ~ "Mixed"
+      )) %>%
+      distinct(studykey, Category) %>%
+      count(Category) %>%
+      rename(Total = n),
+    by = "Category"
+  )
+
+effect_class_tbl <- make_summary_table1("a_class", "Category")
+
+# Quality table
+ data <- data %>%
+    mutate(
+      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+      exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
+      exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
+      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
+      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+      out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
+      out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
+      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+      a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
+      tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
+        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
+        a_class_tf + a_adjusted_tf + a_uncert_def_tf
+    )
+ 
+study_avg_score <- data %>%
+  group_by(studykey) %>%
+  summarize(avg_tot_score_est = mean(tot_score, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Category = case_when(
+    avg_tot_score_est == 11 ~ "11",
+    avg_tot_score_est <= 5 ~ "≤ 5",
+    avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+  ))
+
+quality_tbl <- stats_all$quality_summary %>%
+  mutate(Category = case_when(
+    avg_tot_score_est == 11 ~ "11",
+    avg_tot_score_est <= 5 ~ "≤ 5",
+    avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+  )) %>%
+  mutate(Category = as.character(Category)) %>%
+  group_by(Category, exp_class) %>%
+  summarize(n = sum(n_studies), .groups = "drop") %>%
+  pivot_wider(names_from = exp_class, values_from = n, values_fill = 0) %>%
+  
+  # Correct Total column from averaged study-level scores
+  left_join(
+    study_avg_score %>%
+      count(Category) %>%
+      rename(Total = n),
+    by = "Category"
+  )
+
+
+# Combine all for Table 1
+table1_data <- bind_rows(
+  tibble(
+    total_counts %>% mutate(Category = "Total number of studies")
+  ),
+  tibble(Category = "Number of studies by outcome type") %>% bind_rows(
+    outcome_counts_by_exp[1:3,] %>% filter(out_class_metric %in% c("incidence","occurrence","other")) %>% rename(Category = out_class_metric)
+  ),
+  tibble(Category = "Temporal resolution of outcome"),
+  outcome_temporal_scale_tbl,
+  tibble(Category = "Measure of association effect"),
+  effect_class_tbl,
+  tibble(Category = "Study region"),
+  region_tbl,
+  tibble(Category = "Study spatial scale"),
+  spatial_scale_tbl,
+  tibble(Category = "Study period"),
+  duration_tbl,
+  tibble(Category = "Study population"),
+  pop_tbl,
+  tibble(Category = "Study quality"),
+  quality_tbl
+)
+
+table1_data %>% 
+  select(Category, precipitation,temperature,flood,drought,Total) %>% 
+  gt::gt(rowname_col  = "Category") %>%
+  gt::tab_header(title = "Table 1. Study Characteristics") %>%
+  gt::fmt_number(columns = where(is.numeric), decimals = 0)
+
+```
