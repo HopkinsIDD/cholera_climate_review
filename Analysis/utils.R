@@ -237,13 +237,35 @@ generate_summary_stats <- function(data,
                     "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
                     "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
                     "a_adjusted", "a_uncert_def")
-  quality_summary <- data %>% distinct(!!sym(study_id_var), exp_class, tot_score) %>%
+  quality_summary_by_exp <- data %>% distinct(!!sym(study_id_var), exp_class, tot_score) %>%
     group_by(!!sym(study_id_var), exp_class) %>% 
     summarize(avg_tot_score_est = mean(tot_score))%>% 
     ungroup() %>% 
     count(exp_class, avg_tot_score_est, name = "n_studies")
+
+  # 4. Quality summary by outcome class
+  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
+                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
+                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
+                    "a_adjusted", "a_uncert_def")
+  quality_summary_by_out <- data %>% distinct(!!sym(study_id_var), out_class_metric, tot_score) %>%
+    group_by(!!sym(study_id_var), out_class_metric) %>% 
+    summarize(avg_tot_score_est = mean(tot_score))%>% 
+    ungroup() %>% 
+    count(out_class_metric, avg_tot_score_est, name = "n_studies")
+
+  # 5. Quality summary by continent class
+  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
+                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
+                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
+                    "a_adjusted", "a_uncert_def")
+  quality_summary_by_cont <- data %>% distinct(!!sym(study_id_var), continent, tot_score) %>%
+    group_by(!!sym(study_id_var), continent) %>% 
+    summarize(avg_tot_score_est = mean(tot_score))%>% 
+    ungroup() %>% 
+    count(continent, avg_tot_score_est, name = "n_studies")
   
-  # 4. Direction of effect by quality score
+  # 6. Direction of effect by quality score
   direction_by_quality <- data %>% count(tot_score, !!sym(direction_var)) %>%
   pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
   
@@ -255,25 +277,25 @@ generate_summary_stats <- function(data,
   if (!is.null(outcomes)) {
     filtered_data <- filtered_data %>% filter(out_class_metric %in% outcomes)
   }
-  
-  # 5. Vote counting
+
+  # 7. Vote counting
   vote_combos <- expand_grid(
     exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
     outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
   )
   
-  # 6. Summarize study-level directions
+  # 8. Summarize study-level directions
   study_level_dir <- filtered_data %>%
     group_by(!!sym(study_id_var)) %>%
     summarise_directions(thresh = 0.7) %>%
     select(!!sym(study_id_var), overall_dir)
   
-  # 7. Vote counting summary using study-level directions
+  # 9. Vote counting summary using study-level directions
   vote_combos <- expand_grid(
     exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
     outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
   )
-  
+
   vote_counting_summary <- vote_combos %>%
     rowwise() %>%
     mutate(result = list({
@@ -301,16 +323,22 @@ generate_summary_stats <- function(data,
         n_uncertain <- vote_counts[["uncertain"]] %||% 0
         n_dir <- n_pos + n_neg
         
+        ref_direction <- case_when(
+          n_pos > n_neg ~ "higher",
+          n_neg > n_pos ~ "lower",
+          n_pos == n_neg ~ "higher"  # break ties in favor of higher
+        )
+        
+        success_count <- if (ref_direction == "higher") n_pos else n_neg # Use the direction that's most frequent as the reference
+        
         p_val <- if (n_dir > 0) {
-          binom.test(n_pos, n_dir, p = 0.5, alternative = "greater")$p.value
+          binom.test(success_count, n_dir, p = 0.5, alternative = "two.sided")$p.value # Two sided
         } else {
           NA_real_
         }
         
         tibble(
-          direction = if (n_dir == 0) "uncertain" else {
-            if (n_pos / n_dir >= 0.7) "higher" else if (n_neg / n_dir >= 0.7) "lower" else "uncertain"
-          },
+          direction = if (n_dir == 0) "no direction" else ref_direction, #only higher or lower can be direction
           p_value = p_val,
           total_higher_votes = n_pos,
           total_lower_votes = n_neg,
@@ -329,7 +357,9 @@ generate_summary_stats <- function(data,
   list(
     location_time = location_time,
     study_counts = study_counts,
-    quality_summary = quality_summary,
+    quality_summary_by_exp = quality_summary_by_exp,
+    quality_summary_by_out = quality_summary_by_out, 
+    quality_summary_by_cont = quality_summary_by_cont,
     direction_by_quality = direction_by_quality,
     vote_counting_summary = vote_counting_summary,
     exposure_outcome_summary = exposure_outcome_summary
