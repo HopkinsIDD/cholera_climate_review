@@ -933,7 +933,7 @@ make_summary_table1(data =study_avg_score, "avg_exp_score_est","Category",output
 make_summary_table1(data =study_avg_score_total, "avg_exp_score_est","Category",output_cols = "total")
 ```
 
-### Table 1. Overall score (max=4)
+### Table 1. Association-related score (max=4)
 ```{r}
 make_summary_table1(data =study_avg_score, "avg_a_score_est","Category",output_cols = "by exp")
 make_summary_table1(data =study_avg_score_total, "avg_a_score_est","Category",output_cols = "total")
