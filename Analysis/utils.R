@@ -401,7 +401,7 @@ generate_summary_stats <- function(data,
         success_count <- if (ref_direction == "higher") n_pos else n_neg # Use the direction that's most frequent as the reference
         
         p_val <- if (n_dir > 0) {
-          binom.test(success_count, n_dir, p = 0.5, alternative = "two.sided")$p.value # Two sided
+          binom.test(success_count, n_dir + n_uncertain, p = 0.5, alternative = "two.sided")$p.value # Two sided
         } else {
           NA_real_
         }
