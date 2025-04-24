@@ -1075,3 +1075,54 @@ get_poststrat <- function(res_files) {
   })
 }
 
+
+# Table rendering ---------------------------------------------------------
+
+#' print_vote_table
+#' Print the table of votes
+#' 
+#' @param stats 
+#' @param this_exposure 
+#'
+#' @returns a gt object
+#' 
+print_vote_table <- function(stats, 
+                             this_exposure) {
+  
+  vc <- stats$vote_counting_summary %>% 
+    filter(exposure == this_exposure)
+  
+  vc %>%
+    select(-exposure) %>%  # optional: drop exposure column if redundant
+    rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
+    gt() %>%
+    tab_header(title = str_glue("Vote Counting Summary for {str_to_title(this_exposure)}")) %>%
+    fmt_number(
+      columns = "P Value",
+      decimals = 4
+    ) %>% 
+    fmt_number(
+      columns = contains("Total"),
+      decimals = 0
+    )
+}
+
+#' print_vote_table_continents
+#' Makes a gt_group object out of a list of vote counting tables produced with print_vote_table
+#' 
+#' @param stats_by_continent 
+#' @param this_exposure 
+#'
+#' @returns gt_group object
+#'
+print_vote_table_continents <- function(stats_by_continent, 
+                                        this_exposure) {
+  
+  map(unique(data$continent), function(continent) {
+    print_vote_table(stats = stats_by_continent[[continent]], 
+                     this_exposure = this_exposure) %>% 
+      tab_header(title = continent) 
+  }) %>% 
+    gt_group(.list = .)
+  
+}

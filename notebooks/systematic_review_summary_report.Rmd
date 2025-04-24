@@ -14,7 +14,7 @@ params:
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(purrr)
-source("Analysis/utils.R")
+source(here::here("Analysis/utils.R"))
 library(gtsummary)
 library(lubridate)
 library(gt)
@@ -479,6 +479,16 @@ case_class_tbl %>%
 # Paper quality distribution
 ```{r}
 stats_all <- generate_summary_stats(data)
+stats_by_continent <- map(
+  unique(data$continent), 
+  function(x) {
+    data %>% 
+      filter(continent == x) %>% 
+      generate_summary_stats()
+  }
+) %>% 
+  magrittr::set_names(unique(data$continent))
+
 study_counts <- stats_all$study_counts
 ```
 
@@ -624,65 +634,60 @@ vote_counts <- stats_all$vote_counting_summary
 ```
 
 ## Temperature
+### Overall
 ```{r}
-vc_temp <- vote_counts %>% filter(exposure == "temperature")
 
-vc_temp %>%
-  select(-exposure) %>%  # optional: drop exposure column if redundant
-  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
-  gt() %>%
-  tab_header(title = "Vote Counting Summary for Temperature") %>%
-  fmt_number(
-    columns = where(is.numeric),
-    decimals = 4
-  )
+print_vote_table(stats = stats_all, 
+                 this_exposure = "temperature")
 
+```
+
+### By continent
+```{r}
+
+print_vote_table_continents(stats_by_continent = stats_by_continent,
+                            this_exposure = "temperature")
 ```
 
 ## Precipitation
+### Overall
 ```{r}
-vc_precip <- vote_counts %>% filter(exposure == "precipitation")
-
-vc_precip %>%
-  select(-exposure) %>%  # optional: drop exposure column if redundant
-  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
-  gt() %>%
-  tab_header(title = "Vote Counting Summary for Precipitation") %>%
-  fmt_number(
-    columns = where(is.numeric),
-    decimals = 4
-  )
-
+print_vote_table(stats = stats_all, 
+                 this_exposure = "precipitation")
 ```
 
-## Flood
+### By continent
 ```{r}
-vc_flood <- vote_counts %>% filter(exposure == "flood")
+print_vote_table_continents(stats_by_continent = stats_by_continent,
+                            this_exposure = "precipitation")
 
-vc_flood %>%
-  select(-exposure) %>%  # optional: drop exposure column if redundant
-  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
-  gt() %>%
-  tab_header(title = "Vote Counting Summary for Flood") %>%
-  fmt_number(
-    columns = where(is.numeric),
-    decimals = 4
-  )
+```
+## Flood
+### Overall
+
+```{r}
+print_vote_table(stats = stats_all, 
+                 this_exposure = "flood")
+```
+
+### By continent
+```{r}
+print_vote_table_continents(stats_by_continent = stats_by_continent,
+                            this_exposure = "flood")
 ```
 
 ## Drought
-```{r}
-vc_drought <- vote_counts %>% filter(exposure == "drought")
+### Overall
 
-vc_drought %>%
-  select(-exposure) %>%  # optional: drop exposure column if redundant
-  rename_with(~ str_replace_all(., "_", " ") %>% str_to_title()) %>%  # pretty column names
-  gt() %>%
-  tab_header(title = "Vote Counting Summary for Drought") %>%
-  fmt_number(
-    columns = where(is.numeric),
-    decimals = 4
-  )
+```{r}
+print_vote_table(stats = stats_all, 
+                 this_exposure = "drought")
+```
+
+### By continent
+```{r}
+print_vote_table_continents(stats_by_continent = stats_by_continent,
+                            this_exposure = "drought")
 ```
 
 # Table 1
@@ -723,46 +728,46 @@ data <- data %>%
 # Helper function: generate summary table with Total column
 make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("total","by exp")) {
   if(c("by exp") %in% output_cols){
-  tmp_exp <- data %>%
-    mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
-    distinct(studykey, exp_class, .data[[var]]) %>%
-    count(.data[[var]], exp_class) 
+    tmp_exp <- data %>%
+      mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
+      distinct(studykey, exp_class, .data[[var]]) %>%
+      count(.data[[var]], exp_class) 
   } else {
     tmp_exp <- data.frame()
   }
   
   if(c("total") %in% output_cols){
-  tmp_total <- data %>%
-    mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
-    distinct(studykey, .data[[var]]) %>%
-    count(.data[[var]]) %>%
-    mutate(exp_class="Total")    
+    tmp_total <- data %>%
+      mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
+      distinct(studykey, .data[[var]]) %>%
+      count(.data[[var]]) %>%
+      mutate(exp_class="Total")    
   } else {
     tmp_total <- data.frame()
   }
-
-if(!nrow(tmp_exp) == 0 & !nrow(tmp_total) == 0){
-  tmp <- tmp_exp %>%
-    bind_rows(tmp_total)
-} else if(nrow(tmp_exp) == 0){
-  tmp <- tmp_total
-} else {
-  tmp <- tmp_exp
-}
   
-tmp_long <- tmp %>% 
+  if(!nrow(tmp_exp) == 0 & !nrow(tmp_total) == 0){
+    tmp <- tmp_exp %>%
+      bind_rows(tmp_total)
+  } else if(nrow(tmp_exp) == 0){
+    tmp <- tmp_total
+  } else {
+    tmp <- tmp_exp
+  }
+  
+  tmp_long <- tmp %>% 
     rename(!!rename_var := .data[[var]])
-
+  
   # Create a survey design object to account for weights
-survey_design <- svydesign(ids = ~1, data = tmp_long, weights = ~n)
-
-summary_tbl <- tbl_svysummary(
-  survey_design,  # Use the survey design object
-  by = exp_class,  # Group by Category (Africa, Asia, Other)
-  includ = Category,
-  statistic = list(all_categorical() ~ "{n} ({p}%)"),  # Show counts and percentages
-  missing = "no"  # Exclude missing data from summary
-)
+  survey_design <- svydesign(ids = ~1, data = tmp_long, weights = ~n)
+  
+  summary_tbl <- tbl_svysummary(
+    survey_design,  # Use the survey design object
+    by = exp_class,  # Group by Category (Africa, Asia, Other)
+    includ = Category,
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),  # Show counts and percentages
+    missing = "no"  # Exclude missing data from summary
+  )
   return(summary_tbl)
 }
 ```
@@ -808,17 +813,17 @@ make_summary_table1(data = data, "a_class", "Category")
 ### Table 1. Any reported uncertainty
 ```{r}
 make_summary_table1(data = data %>% group_by(studykey,exp_class) %>% 
-                                         summarize(study_report_sig = case_when(
-                                           any(sig_report) ~ "TRUE",
-                                           TRUE ~ "FALSE"
-                                         )) %>% 
-                                         ungroup(), "study_report_sig", "Category",output_cols = "by exp")
+                      summarize(study_report_sig = case_when(
+                        any(sig_report) ~ "TRUE",
+                        TRUE ~ "FALSE"
+                      )) %>% 
+                      ungroup(), "study_report_sig", "Category",output_cols = "by exp")
 make_summary_table1(data = data %>% group_by(studykey) %>% 
-                                         summarize(study_report_sig = case_when(
-                                           any(sig_report) ~ "TRUE",
-                                           TRUE ~ "FALSE"
-                                         )) %>% 
-                                         ungroup(), "study_report_sig", "Category",output_cols = "total") 
+                      summarize(study_report_sig = case_when(
+                        any(sig_report) ~ "TRUE",
+                        TRUE ~ "FALSE"
+                      )) %>% 
+                      ungroup(), "study_report_sig", "Category",output_cols = "total") 
 ```
 
 ### Table 1. Any model adjustment
@@ -840,27 +845,27 @@ make_summary_table1(data = data %>% group_by(studykey) %>%
 ## Table 1. Study quality
 ```{r}
 # Study Quality
- data <- data %>%
-    mutate(
-      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
-      exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
-      exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
-      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
-      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
-      out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
-      out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
-      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
-      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
-      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
-      a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
-      tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
-        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-        a_class_tf + a_adjusted_tf + a_uncert_def_tf,
-      exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
-      out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
-      a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
-    )
- 
+data <- data %>%
+  mutate(
+    exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+    exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
+    exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
+    out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
+    out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+    out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
+    out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
+    a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+    a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+    a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+    a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
+    tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
+      out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
+      a_class_tf + a_adjusted_tf + a_uncert_def_tf,
+    exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
+    out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
+    a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
+  )
+
 study_avg_score <- data %>%
   group_by(studykey,exp_class) %>%
   summarize(avg_tot_score_est = mean(tot_score, na.rm = TRUE),
@@ -869,22 +874,22 @@ study_avg_score <- data %>%
             avg_a_score_est = mean(a_tot_score, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     avg_tot_score_est = case_when(
-    avg_tot_score_est == 11 ~ "11",
-    avg_tot_score_est <= 5 ~ "≤ 5",
-    avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
-  ),
+      avg_tot_score_est == 11 ~ "11",
+      avg_tot_score_est <= 5 ~ "≤ 5",
+      avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+    ),
     avg_out_score_est = case_when(
-    avg_out_score_est == 4 ~ "4",
-    TRUE ~ "<4"
-  ),
+      avg_out_score_est == 4 ~ "4",
+      TRUE ~ "<4"
+    ),
     avg_exp_score_est = case_when(
-    avg_exp_score_est == 3 ~ "3",
-    TRUE ~ "<3"
-  ),
+      avg_exp_score_est == 3 ~ "3",
+      TRUE ~ "<3"
+    ),
     avg_a_score_est = case_when(
-    avg_a_score_est == 4 ~ "4",
-    TRUE ~ "<4"
-  ),
+      avg_a_score_est == 4 ~ "4",
+      TRUE ~ "<4"
+    ),
   )
 
 study_avg_score_total <- data %>%
@@ -895,22 +900,22 @@ study_avg_score_total <- data %>%
             avg_a_score_est = mean(a_tot_score, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     avg_tot_score_est = case_when(
-    avg_tot_score_est == 11 ~ "11",
-    avg_tot_score_est <= 5 ~ "≤ 5",
-    avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
-  ),
+      avg_tot_score_est == 11 ~ "11",
+      avg_tot_score_est <= 5 ~ "≤ 5",
+      avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+    ),
     avg_out_score_est = case_when(
-    avg_out_score_est == 4 ~ "4",
-    TRUE ~ "<4"
-  ),
+      avg_out_score_est == 4 ~ "4",
+      TRUE ~ "<4"
+    ),
     avg_exp_score_est = case_when(
-    avg_exp_score_est == 3 ~ "3",
-    TRUE ~ "<3"
-  ),
+      avg_exp_score_est == 3 ~ "3",
+      TRUE ~ "<3"
+    ),
     avg_a_score_est = case_when(
-    avg_a_score_est == 4 ~ "4",
-    TRUE ~ "<4"
-  ),
+      avg_a_score_est == 4 ~ "4",
+      TRUE ~ "<4"
+    ),
   )
 
 ```
