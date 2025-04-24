@@ -7,7 +7,7 @@ output:
     toc_depth: 2
     number_sections: true
 params:
-  data_path: "cholera_climate_review/Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
+  data_path: "Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
 ---
 
 ```{r setup, echo=F}
@@ -22,7 +22,7 @@ library(survey)
 
 
 # Load the dataset from the file path
-data <- readr::read_csv(params$data_path) %>% 
+data <- readr::read_csv(here::here(params$data_path)) %>% 
   mutate(
     admin_level = case_when(
       new_admin == "supranational" ~ "regional",
@@ -634,7 +634,7 @@ vc_temp %>%
   tab_header(title = "Vote Counting Summary for Temperature") %>%
   fmt_number(
     columns = where(is.numeric),
-    decimals = 2
+    decimals = 4
   )
 
 ```
@@ -650,7 +650,7 @@ vc_precip %>%
   tab_header(title = "Vote Counting Summary for Precipitation") %>%
   fmt_number(
     columns = where(is.numeric),
-    decimals = 2
+    decimals = 4
   )
 
 ```
@@ -666,7 +666,7 @@ vc_flood %>%
   tab_header(title = "Vote Counting Summary for Flood") %>%
   fmt_number(
     columns = where(is.numeric),
-    decimals = 2
+    decimals = 4
   )
 ```
 
@@ -681,7 +681,7 @@ vc_drought %>%
   tab_header(title = "Vote Counting Summary for Drought") %>%
   fmt_number(
     columns = where(is.numeric),
-    decimals = 2
+    decimals = 4
   )
 ```
 
