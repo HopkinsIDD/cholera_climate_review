@@ -479,6 +479,12 @@ case_class_tbl %>%
 # Paper quality distribution
 ```{r}
 stats_all <- generate_summary_stats(data)
+
+# Add scores to dataframe
+data_scores <- data %>% 
+  make_scores() %>% 
+  mutate(hq_score = ifelse(tot_score == 11, "complete-score", "imperfect-score"))
+
 stats_by_continent <- map(
   unique(data$continent), 
   function(x) {
@@ -488,6 +494,17 @@ stats_by_continent <- map(
   }
 ) %>% 
   magrittr::set_names(unique(data$continent))
+
+stats_by_score <- map(
+  unique(data_scores$hq_score), 
+  function(x) {
+    data_scores %>% 
+      filter(hq_score == x) %>% 
+      generate_summary_stats()
+  }
+) %>% 
+  magrittr::set_names(unique(data_scores$hq_score))
+
 
 study_counts <- stats_all$study_counts
 ```
@@ -648,7 +665,12 @@ print_vote_table(stats = stats_all,
 print_vote_table_continents(stats_by_continent = stats_by_continent,
                             this_exposure = "temperature")
 ```
+### By score
+```{r}
 
+print_vote_table_scores(stats_by_score = stats_by_score,
+                        this_exposure = "temperature")
+```
 ## Precipitation
 ### Overall
 ```{r}
@@ -662,6 +684,14 @@ print_vote_table_continents(stats_by_continent = stats_by_continent,
                             this_exposure = "precipitation")
 
 ```
+
+### By score
+```{r}
+
+print_vote_table_scores(stats_by_score = stats_by_score,
+                        this_exposure = "precipitation")
+```
+
 ## Flood
 ### Overall
 
@@ -676,6 +706,14 @@ print_vote_table_continents(stats_by_continent = stats_by_continent,
                             this_exposure = "flood")
 ```
 
+
+### By score
+```{r}
+
+print_vote_table_scores(stats_by_score = stats_by_score,
+                        this_exposure = "flood")
+```
+
 ## Drought
 ### Overall
 
@@ -688,6 +726,13 @@ print_vote_table(stats = stats_all,
 ```{r}
 print_vote_table_continents(stats_by_continent = stats_by_continent,
                             this_exposure = "drought")
+```
+
+### By score
+```{r}
+
+print_vote_table_scores(stats_by_score = stats_by_score,
+                        this_exposure = "drought")
 ```
 
 # Table 1

@@ -258,6 +258,27 @@ identify_endemicity <- function(
 }
 
 # Data summary -----------------------------------------------
+
+make_scores <- function(df) {
+  df  %>% 
+    mutate(
+      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+      exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
+      exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
+      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
+      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+      out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
+      out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
+      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+      a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
+      tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
+        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
+        a_class_tf + a_adjusted_tf + a_uncert_def_tf
+    )
+}
+
 #' @name generate_summary_stats
 #' @description
 #' A function to summarize basic statistics for a given exposure and outcome combination
@@ -275,22 +296,7 @@ generate_summary_stats <- function(data,
   
   # 0. Calculate the quality score as tot_score
   data <- data %>%
-    mutate(
-      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
-      exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
-      exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
-      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
-      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
-      out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
-      out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
-      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
-      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
-      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
-      a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
-      tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
-        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-        a_class_tf + a_adjusted_tf + a_uncert_def_tf
-    )
+    make_scores()
   
   # 1. Location-time product per study
   location_time <- data %>% mutate(year = substr(eff_tl, 1, 4)) %>% group_by(!!sym(study_id_var)) %>%
@@ -299,7 +305,7 @@ generate_summary_stats <- function(data,
   
   # 2. Study counts by exp_class
   study_counts <- data %>% distinct(!!sym(study_id_var), exp_class) %>%
-  count(exp_class, name = "n_studies")
+    count(exp_class, name = "n_studies")
   
   # 3. Quality summary by exposure class
   quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
@@ -311,7 +317,7 @@ generate_summary_stats <- function(data,
     summarize(avg_tot_score_est = mean(tot_score))%>% 
     ungroup() %>% 
     count(exp_class, avg_tot_score_est, name = "n_studies")
-
+  
   # 4. Quality summary by outcome class
   quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
                     "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
@@ -322,7 +328,7 @@ generate_summary_stats <- function(data,
     summarize(avg_tot_score_est = mean(tot_score))%>% 
     ungroup() %>% 
     count(out_class_metric, avg_tot_score_est, name = "n_studies")
-
+  
   # 5. Quality summary by continent class
   quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
                     "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
@@ -336,7 +342,7 @@ generate_summary_stats <- function(data,
   
   # 6. Direction of effect by quality score
   direction_by_quality <- data %>% count(tot_score, !!sym(direction_var)) %>%
-  pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
+    pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
   
   # If exposure / outcome is specified in the parameter:
   filtered_data <- data
@@ -346,7 +352,7 @@ generate_summary_stats <- function(data,
   if (!is.null(outcomes)) {
     filtered_data <- filtered_data %>% filter(out_class_metric %in% outcomes)
   }
-
+  
   # 7. Vote counting
   vote_combos <- expand_grid(
     exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
@@ -364,7 +370,7 @@ generate_summary_stats <- function(data,
     exposure = if (is.null(exposures)) unique(data$exp_class) else exposures,
     outcome = if (is.null(outcomes)) unique(data$out_class_metric) else outcomes
   )
-
+  
   vote_counting_summary <- vote_combos %>%
     rowwise() %>%
     mutate(result = list({
@@ -399,9 +405,16 @@ generate_summary_stats <- function(data,
         )
         
         success_count <- if (ref_direction == "higher") n_pos else n_neg # Use the direction that's most frequent as the reference
+        failure_count <- if (ref_direction == "higher") n_neg else n_pos # Use the direction that's most frequent as the reference
         
         p_val <- if (n_dir > 0) {
-          binom.test(success_count, n_dir + n_uncertain, p = 0.5, alternative = "two.sided")$p.value # Two sided
+          binom.test(success_count, n_dir, p = 0.5, alternative = "two.sided")$p.value # Two sided
+        } else {
+          NA_real_
+        }
+        
+        p_val_trinom <- if (n_dir > 0) {
+          trinom_test(success_count, failure_count, n_uncertain)
         } else {
           NA_real_
         }
@@ -409,6 +422,7 @@ generate_summary_stats <- function(data,
         tibble(
           direction = if (n_dir == 0) "no direction" else ref_direction, #only higher or lower can be direction
           p_value = p_val,
+          p_value_trinom = p_val_trinom,
           total_higher_votes = n_pos,
           total_lower_votes = n_neg,
           total_uncertain_votes = n_uncertain
@@ -435,6 +449,21 @@ generate_summary_stats <- function(data,
   )
 }
 
+trinom_test <- function(pos, neg, ties) {
+  # From stikpetR::ts_trinomial_os based on (Bian et al., 2011, p. 6)
+  n <- pos + neg + ties
+  p0 <- ties/n
+  p1 <- (1 - p0)/2
+  k <- abs(pos - neg)
+  sig <- 0
+  for (z in k:n) {
+    for (i in 0:floor((n - z)/2)) {
+      sig = sig + dmultinom(c(i, i + z, n - i - (i + z)), 
+                            prob = c(p1, p1, p0))
+    }
+  }
+  return(pmin(1, 2*sig))
+}
 # Direction of effect plot ------------------------------------------------
 
 #' summaries_directions
@@ -808,7 +837,7 @@ plot_spatial_distribution_map <- function(plot_data,
       TRUE ~ NA_character_
     ))
   
- ggplot() +
+  ggplot() +
     geom_sf(data = world_sf_combined, fill = "gray95", color = "gray95", size = 0.1) +
     geom_sf(data = data_shp, aes(fill = n_studies), color = "gray95", size = 0.2) +
     geom_sf(data = data_shp %>% filter(!is.na(endemic_flag)),
@@ -1098,7 +1127,7 @@ print_vote_table <- function(stats,
     gt() %>%
     tab_header(title = str_glue("Vote Counting Summary for {str_to_title(this_exposure)}")) %>%
     fmt_number(
-      columns = "P Value",
+      columns = contains("P Value"),
       decimals = 4
     ) %>% 
     fmt_number(
@@ -1120,8 +1149,29 @@ print_vote_table_continents <- function(stats_by_continent,
   
   map(unique(data$continent), function(continent) {
     print_vote_table(stats = stats_by_continent[[continent]], 
-                     this_exposure = this_exposure) %>% 
-      tab_header(title = continent) 
+                     this_exposure = this_exposure) %>%
+      tab_header(title = str_glue("Vote Counting Summary for {str_to_title(this_exposure)} and continent:{continent}"))
+    
+  }) %>% 
+    gt_group(.list = .)
+  
+}
+
+#' print_vote_table_scores
+#' Makes a gt_group object out of a list of vote counting tables produced with print_vote_table
+#' 
+#' @param stats_by_score 
+#' @param this_exposure 
+#'
+#' @returns gt_group object
+#'
+print_vote_table_scores <- function(stats_by_score, 
+                                    this_exposure) {
+  
+  map(names(stats_by_score), function(score) {
+    print_vote_table(stats = stats_by_score[[score]], 
+                     this_exposure = this_exposure) %>%
+      tab_header(title = str_glue("Vote Counting Summary for {str_to_title(this_exposure)} and score:{score}"))
   }) %>% 
     gt_group(.list = .)
   
