@@ -780,8 +780,7 @@ map_plot <- function(vars = c("lag_class", "rainy_season", "urban_rural_class"),
 plot_spatial_distribution_map <- function(plot_data,
                                           country_col,
                                           group_col = NULL,
-                                          group_levels = NULL,
-                                          endemicity_col = NULL) {
+                                          group_levels = NULL) {
   
   library(rgeoboundaries)
   library(sf)
@@ -813,37 +812,35 @@ plot_spatial_distribution_map <- function(plot_data,
   )
   world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf)
   
+  # Highlight affected countries
+  most_affected_countries <- c("YEM", "HTI", "AFG", "COD", "NGA", "SOM", "MOZ", "ZWE", "ETH", "ZAF")
+  shps_affected_countries <- rgeoboundaries::geoboundaries(
+    country = most_affected_countries, adm_lvl = 'adm0'
+  ) %>% 
+    select(shapeISO, shapeName, geometry)
+  
   if (!is.null(group_col)) {
     if (is.null(group_levels)) {
       group_levels <- sort(unique(plot_data[[group_col]]))
     }
     data_shp <- world_sf_combined %>%
       left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      left_join(plot_data %>% distinct(!!sym(country_col), !!sym(endemicity_col)),
-                by = c("shapeISO" = country_col)) %>%
       filter(!is.na(n_studies)) %>%
       mutate(!!sym(group_col) := factor(!!sym(group_col), levels = group_levels))
   } else {
     data_shp <- world_sf_combined %>%
       left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      left_join(plot_data %>% distinct(!!sym(country_col), !!sym(endemicity_col)),
-                by = c("shapeISO" = country_col)) %>%
       filter(!is.na(n_studies))
   }
   
-  data_shp <- data_shp %>%
-    mutate(endemic_flag = case_when(
-      !!sym(endemicity_col) == "Endemic" ~ "Countries with more than a decade of\nreported cases in 2000-2022",
-      TRUE ~ NA_character_
-    ))
-  
   ggplot() +
     geom_sf(data = world_sf_combined, fill = "gray95", color = "gray95", size = 0.1) +
-    geom_sf(data = data_shp, aes(fill = n_studies), color = "gray95", size = 0.2) +
-    geom_sf(data = data_shp %>% filter(!is.na(endemic_flag)),
-            aes(color = endemic_flag), fill = NA, linewidth = 0.3) +
+    geom_sf(data = data_shp, aes(fill = n_studies), color = "gray95", size = 0.1) +
+    geom_sf(data = shps_affected_countries %>%
+              mutate(group = "Cholera Most Affected\nCountries in 2000-2023"),
+            aes(color  = group), fill=NA,linewidth = 0.1, alpha = 0.2) +
     scale_fill_viridis_c(direction = -1, name = "Number of Papers", na.value = "white") +
-    scale_color_manual(name = NULL, values = c("Countries with more than a decade of\nreported cases in 2000-2022" = "red")) +
+    scale_color_manual(name = "", values = c("Cholera Most Affected\nCountries in 2000-2023" = "red")) +
     {
       if (!is.null(group_col)) facet_grid(rows = vars(!!sym(group_col)), switch = "y") else NULL
     } +
@@ -858,6 +855,7 @@ plot_spatial_distribution_map <- function(plot_data,
       plot.title = element_text(face = "bold", hjust = 0)
     )
 }
+
 
 # Misc --------------------------------------------------------------------
 
