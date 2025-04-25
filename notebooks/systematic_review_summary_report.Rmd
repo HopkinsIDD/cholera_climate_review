@@ -771,7 +771,6 @@ data <- data %>%
                                             "missing")))
 
 # Helper function: generate summary table with Total column
-make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("total","by exp")) {
   if(c("by exp") %in% output_cols){
     tmp_exp <- data %>%
       mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
