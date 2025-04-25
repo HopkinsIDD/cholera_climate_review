@@ -771,6 +771,8 @@ data <- data %>%
                                             "missing")))
 
 # Helper function: generate summary table with Total column
+make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("Overall","by exp"),  exp_class_order = c("precipitation", "temperature", "flood","drought","Overall")
+) {
   if(c("by exp") %in% output_cols){
     tmp_exp <- data %>%
       mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
@@ -780,12 +782,12 @@ data <- data %>%
     tmp_exp <- data.frame()
   }
   
-  if(c("total") %in% output_cols){
+  if(c("Overall") %in% output_cols){
     tmp_total <- data %>%
       mutate(across(all_of(var), ~tolower(trimws(.)))) %>%
       distinct(studykey, .data[[var]]) %>%
       count(.data[[var]]) %>%
-      mutate(exp_class="Total")    
+      mutate(exp_class="Overall")    
   } else {
     tmp_total <- data.frame()
   }
@@ -802,6 +804,11 @@ data <- data %>%
   tmp_long <- tmp %>% 
     rename(!!rename_var := .data[[var]])
   
+  if (!is.null(exp_class_order)) {
+    tmp_long <- tmp_long %>%
+      mutate(exp_class = factor(exp_class, levels = exp_class_order))
+  }
+
   # Create a survey design object to account for weights
   survey_design <- svydesign(ids = ~1, data = tmp_long, weights = ~n)
   
@@ -812,7 +819,14 @@ data <- data %>%
     statistic = list(all_categorical() ~ "{n} ({p}%)"),  # Show counts and percentages
     missing = "no"  # Exclude missing data from summary
   )
-  return(summary_tbl)
+  
+  summary_tbl <- as_tibble(summary_tbl)
+  
+  # Round the percentage
+  summary_tbl <- summary_tbl %>% 
+    mutate(across(contains("%"), ~ceiling(as.numeric(gsub("[^0-9.-]", "", .))), .names = "rounded_{.col}"))
+
+  return(as_gtsummary(summary_tbl))
 }
 ```
 
@@ -820,6 +834,199 @@ data <- data %>%
 ### Table 1. Study region
 ```{r}
 make_summary_table1(data = data, "continent", "Category")
+```
+
+### Table 1. Study country
+```{r}
+get_country_count_by_continent <- function(data, ctn = NULL, ctn_col = "continent") {
+  library(dplyr)
+  library(tidyr)
+  library(stringr)
+
+  clean_data <- data %>%
+    mutate(across(all_of(c(ctn_col, "eff_country")), ~tolower(trimws(.)))) %>%
+    separate_rows(eff_country, sep = "\\|") %>%
+    distinct(studykey, .data[[ctn_col]], eff_country, exp_class) %>%
+    rename(continent = !!sym(ctn_col))
+
+  if (!is.null(ctn)) {
+    clean_data <- clean_data %>%
+      filter(continent == tolower(ctn))
+  }
+
+  top_by_exp <- clean_data %>%
+    group_by(exp_class, eff_country) %>%
+    summarise(n = n_distinct(studykey), .groups = "drop") %>%
+    group_by(exp_class) %>%
+    slice_max(order_by = n, n = 1, with_ties = T) %>%
+    ungroup()
+
+  top_country_grid <- top_by_exp %>%
+    distinct(eff_country) %>%
+    crossing(exp_class = unique(clean_data$exp_class))
+
+  country_counts <- clean_data %>%
+    semi_join(top_country_grid, by = "eff_country") %>%
+    group_by(eff_country, exp_class) %>%
+    summarise(n_papers = n_distinct(studykey), .groups = "drop") %>%
+    right_join(top_country_grid, by = c("eff_country", "exp_class")) %>%
+    mutate(n_papers = replace_na(n_papers, 0)) %>%
+    arrange(eff_country, exp_class)
+
+  top_countries <- unique(top_by_exp$eff_country)
+
+  others_counts <- clean_data %>%
+    filter(!eff_country %in% top_countries) %>%
+    group_by(exp_class) %>%
+    summarise(
+      eff_country = "Others",
+      n_papers = n_distinct(studykey),
+      .groups = "drop"
+    )
+
+  country_counts_with_others <- bind_rows(country_counts, others_counts) %>%
+    arrange(eff_country, exp_class)
+
+  return(country_counts_with_others)
+}
+
+
+get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ctn_col = "continent") {
+  library(dplyr)
+  library(tidyr)
+  library(stringr)
+  library(survey)
+  library(gtsummary)
+
+  clean_data <- data %>%
+    mutate(across(all_of(c(ctn_col, "eff_country")), ~tolower(trimws(.)))) %>%
+    separate_rows(eff_country, sep = "\\|") %>%
+    distinct(studykey, !!sym(ctn_col), eff_country)
+
+  continent_data <- clean_data %>%
+    filter(!!sym(ctn_col) == tolower(ctn))
+
+  top_countries <- unique(country_continent_by_ctn$eff_country)
+
+  country_counts <- continent_data %>%
+    filter(eff_country %in% top_countries) %>%
+    group_by(eff_country) %>%
+    summarise(
+      n = n_distinct(studykey),
+      .groups = "drop"
+    )
+
+  other_n <- continent_data %>%
+    filter(!eff_country %in% top_countries) %>%
+    pull(studykey) %>%
+    unique() %>%
+    length()
+
+  total_n <- continent_data %>%
+    pull(studykey) %>%
+    unique() %>%
+    length()
+  
+  # Other countries
+  summary_data <- country_counts %>%
+    select(eff_country, n) %>%
+    mutate(continent = ctn) %>%
+    bind_rows(
+      tibble(
+        eff_country = "Others",
+        n = other_n,
+        continent = ctn
+      )
+    ) %>%
+    relocate(continent)
+
+  survey_design <- svydesign(ids = ~1, data = summary_data, weights = ~n)
+
+  tbl <- tbl_svysummary(
+    survey_design,
+    by = "continent",
+    include = "eff_country",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+    modify_caption(glue::glue("**Summary Table for Continent (overall): {str_to_title(ctn)}**"))
+
+  # Overall
+  overall_row <- tibble(
+    variable = "eff_country",
+    group = NA,
+    label = "Overall",
+    stat_1 = as.character(total_n)
+  )
+
+  tbl_df <- as_tibble(tbl$table_body)
+  final_tbl <- tbl %>%
+    modify_table_body(
+      ~ bind_rows(.x, overall_row)
+    )
+
+  return(final_tbl)
+}
+```
+
+```{r}
+continent_data <- get_country_count_by_continent(data = data,ctn = "africa") %>% 
+    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
+tbl_svysummary(
+    continent_survey_design,
+    by = "exp_class",
+    include = "eff_country",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+  modify_caption(
+    "**Summary Table for Continent: Africa**"
+  )
+```
+
+```{r}
+get_country_count(data = data, country_continent_by_ctn = continent_data,ctn = 'africa',ctn_col = 'continent')
+```
+
+```{r}
+continent_data <- get_country_count_by_continent(data = data,ctn = "asia",ctn_col = 'continent') %>% 
+    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
+tbl_svysummary(
+    continent_survey_design,
+    by = "exp_class",
+    include = "eff_country",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+  modify_caption(
+    "**Summary Table for Continent: Asia**"
+  )
+```
+
+```{r}
+get_country_count(data = data, country_continent_by_ctn = continent_data,ctn = 'asia',ctn_col = 'continent')
+```
+
+```{r}
+continent_data <- get_country_count_by_continent(data = data,ctn = "other",ctn_col = 'continent') %>% 
+    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
+tbl_svysummary(
+    continent_survey_design,
+    by = "exp_class",
+    include = "eff_country",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+  modify_caption(
+    "**Summary Table for Continent: Other**"
+  )
+```
+
+```{r}
+get_country_count(data = data, country_continent_by_ctn = continent_data,ctn = 'other',ctn_col = 'continent')
 ```
 
 ### Table 1. Study spatial scale
@@ -861,13 +1068,13 @@ make_summary_table1(data = data %>% group_by(studykey,exp_class) %>%
                         any(sig_report) ~ "TRUE",
                         TRUE ~ "FALSE"
                       )) %>% 
-                      ungroup(), "study_report_sig", "Category",output_cols = "by exp")
+                      ungroup(), "study_report_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 make_summary_table1(data = data %>% group_by(studykey) %>% 
                       summarize(study_report_sig = case_when(
                         any(sig_report) ~ "TRUE",
                         TRUE ~ "FALSE"
                       )) %>% 
-                      ungroup(), "study_report_sig", "Category",output_cols = "total") 
+                      ungroup(), "study_report_sig", "Category",output_cols = "Overall",exp_class_order = c("Overall")) 
 ```
 
 ### Table 1. Any model adjustment
@@ -877,13 +1084,13 @@ make_summary_table1(data = data %>% group_by(studykey,exp_class) %>%
                         any(a_adjusted) ~ "TRUE",
                         a_adjusted == "not stated" ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
-                      ungroup(), "study_adj_sig", "Category",output_cols = "by exp") 
+                      ungroup(), "study_adj_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
 make_summary_table1(data = data %>% group_by(studykey) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
                         any(a_adjusted %in% "not stated") ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
-                      ungroup(), "study_adj_sig", "Category",output_cols = "total") 
+                      ungroup(), "study_adj_sig", "Category",output_cols = "Overall",exp_class_order = c("Overall")) 
 ```
 
 ## Table 1. Study quality
@@ -966,24 +1173,24 @@ study_avg_score_total <- data %>%
 
 ### Table 1. Overall score (max=11)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_tot_score_est","Category",output_cols = "by exp")
-make_summary_table1(data =study_avg_score_total, "avg_tot_score_est","Category",output_cols = "total")
+make_summary_table1(data =study_avg_score, "avg_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "avg_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Outcome-related score (max=4)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_out_score_est","Category",output_cols = "by exp") 
-make_summary_table1(data =study_avg_score_total, "avg_out_score_est","Category",output_cols = "total")
+make_summary_table1(data =study_avg_score, "avg_out_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
+make_summary_table1(data =study_avg_score_total, "avg_out_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Exposure-related score (max=3)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_exp_score_est","Category",output_cols = "by exp")
-make_summary_table1(data =study_avg_score_total, "avg_exp_score_est","Category",output_cols = "total")
+make_summary_table1(data =study_avg_score, "avg_exp_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "avg_exp_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Association-related score (max=4)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_a_score_est","Category",output_cols = "by exp")
-make_summary_table1(data =study_avg_score_total, "avg_a_score_est","Category",output_cols = "total")
+make_summary_table1(data =study_avg_score, "avg_a_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "avg_a_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
