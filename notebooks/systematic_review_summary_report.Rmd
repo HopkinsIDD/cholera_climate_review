@@ -390,6 +390,9 @@ case_class <- data %>%
   mutate(case_type = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
   )) %>%
@@ -411,6 +414,9 @@ case_class_tbl <- data %>%
   mutate(case_type = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
   )) %>% 
@@ -435,6 +441,9 @@ case_class_tbl <- data %>%
   mutate(case_type = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
   )) %>% 
@@ -459,6 +468,9 @@ case_class_tbl <- data %>%
   mutate(case_type = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
   )) %>% 
@@ -752,6 +764,9 @@ data <- data %>%
   mutate(new_out_class_case_presentation = case_when(
     out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
     out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
     out_class_case_presentation == "not stated" ~ "Unknown",
     TRUE ~ "Mixed"
   )) %>% 
