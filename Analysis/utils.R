@@ -839,7 +839,7 @@ plot_spatial_distribution_map <- function(plot_data,
     geom_sf(data = shps_affected_countries %>%
               mutate(group = "Cholera Most Affected\nCountries in 2000-2023"),
             aes(color  = group), fill=NA,linewidth = 0.1, alpha = 0.2) +
-    scale_fill_viridis_c(direction = -1, name = "Number of Papers", na.value = "white") +
+    scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
     scale_color_manual(name = "", values = c("Cholera Most Affected\nCountries in 2000-2023" = "red")) +
     {
       if (!is.null(group_col)) facet_grid(rows = vars(!!sym(group_col)), switch = "y") else NULL
