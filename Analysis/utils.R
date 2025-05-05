@@ -780,12 +780,14 @@ map_plot <- function(vars = c("lag_class", "rainy_season", "urban_rural_class"),
 plot_spatial_distribution_map <- function(plot_data,
                                           country_col,
                                           group_col = NULL,
-                                          group_levels = NULL) {
+                                          group_levels = NULL,
+                                          who_data = who_data) {
   
   library(rgeoboundaries)
   library(sf)
   library(tidyverse)
   
+  # Compute the count of studies per country
   if (!is.null(group_col)) {
     country_counts <- plot_data %>% 
       distinct(studykey, !!sym(country_col), !!sym(group_col)) %>% 
@@ -812,48 +814,34 @@ plot_spatial_distribution_map <- function(plot_data,
   )
   world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf)
   
-  # Highlight affected countries
-  most_affected_countries <- c("YEM", "HTI", "AFG", "COD", "NGA", "SOM", "MOZ", "ZWE", "ETH", "ZAF")
-  shps_affected_countries <- rgeoboundaries::geoboundaries(
-    country = most_affected_countries, adm_lvl = 'adm0'
-  ) %>% 
-    select(shapeISO, shapeName, geometry)
+  # Join WHO data to the spatial data
+  data_shp <- world_sf_combined %>%
+    left_join(country_counts, by = c("shapeISO" = country_col)) %>%
+    filter(!is.na(n_studies)) %>%
+    left_join(who_data, by = c("shapeISO" = "region"))
+
+  # 
+  regional_sf <- data_shp %>% filter(admin_level == "regional")
+  national_sf <- data_shp %>% filter(admin_level == "national")
+  subnational_sf <- data_shp %>% filter(admin_level == "sub-national")
   
-  if (!is.null(group_col)) {
-    if (is.null(group_levels)) {
-      group_levels <- sort(unique(plot_data[[group_col]]))
-    }
-    data_shp <- world_sf_combined %>%
-      left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      filter(!is.na(n_studies)) %>%
-      mutate(!!sym(group_col) := factor(!!sym(group_col), levels = group_levels))
-  } else {
-    data_shp <- world_sf_combined %>%
-      left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      filter(!is.na(n_studies))
-  }
-  
+  # Plot the map with custom borders and merged panels
   ggplot() +
-    geom_sf(data = world_sf_combined, fill = "gray95", color = "gray95", size = 0.1) +
-    geom_sf(data = data_shp, aes(fill = n_studies), color = "gray95", size = 0.1) +
-    geom_sf(data = shps_affected_countries %>%
-              mutate(group = "Cholera Most Affected\nCountries in 2000-2023"),
-            aes(color  = group), fill=NA,linewidth = 0.1, alpha = 0.2) +
+    geom_sf(data = world_sf_combined, fill = "gray95", color = NA, size = 0.1) +
+    geom_sf(data = regional_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
+    geom_sf(data = national_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
+    geom_sf(data = subnational_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
     scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
-    scale_color_manual(name = "", values = c("Cholera Most Affected\nCountries in 2000-2023" = "red")) +
-    {
-      if (!is.null(group_col)) facet_grid(rows = vars(!!sym(group_col)), switch = "y") else NULL
-    } +
+    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2023)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
              ylim = c(st_bbox(data_shp)["ymin"], st_bbox(data_shp)["ymax"]),
              expand = FALSE) +
     theme_bw() +
     theme(
       legend.position = "bottom",
-      strip.text.y.left = element_text(size = 10, face = "bold"),
-      strip.placement = "outside",
       plot.title = element_text(face = "bold", hjust = 0)
-    )
+    ) +
+    ggtitle("Spatial Distribution of Studies by Country")
 }
 
 
