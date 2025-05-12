@@ -201,7 +201,7 @@ filter_final_analysis_dataset <- function(data, criteria = NULL) {
   }
   
   data %>%
-    filter(!!!criteria)
+    filter(!!criteria)
 }
 
 #' @name identify_endemicity
