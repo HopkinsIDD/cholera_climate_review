@@ -20,7 +20,6 @@ library(lubridate)
 library(gt)
 library(survey)
 
-
 # Load the dataset from the file path
 data <- readr::read_csv(here::here(params$data_path)) %>% 
   mutate(
@@ -32,7 +31,13 @@ data <- readr::read_csv(here::here(params$data_path)) %>%
   add_continent("eff_country") %>% 
   mutate(
     exp_class =factor(exp_class, levels = c("precipitation","temperature","flood","drought"))
-  )
+  ) %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+  mutate(study_year_tl = lubridate::year(eff_tl),
+         study_year_tr = lubridate::year(eff_tr)) %>% 
+  filter_final_analysis_dataset(
+    ., criteria = list(expr(study_year_tl > 1961))
+  ) # remove papers/estimates before 7th pandemic
 ```
 
 # Exposure summary
@@ -750,9 +755,6 @@ print_vote_table_scores(stats_by_score = stats_by_score,
 # Table 1
 ```{r}
 data <- data %>%
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
-  mutate(study_year_tl = lubridate::year(eff_tl),
-         study_year_tr = lubridate::year(eff_tr)) %>%
   mutate(duration = as.numeric(eff_tr - eff_tl)) %>%
   mutate(study_duration = case_when(
     duration <= 366 ~ "<1 year",
