@@ -188,6 +188,22 @@ get_all_out_class <- function() {
   c("occurrence", "incidence")
 }
 
+#' @name filter_final_analysis_dataset
+#' @description
+#' This function aims to filter out the final analysis dataset based on a list of criteria
+#' @param data extracted and processed data.
+#' @param criteria A list of criterias that are used to filter out the analysis dataset. The default is NULL.
+filter_final_analysis_dataset <- function(data, criteria = NULL) {
+  library(rlang)
+  
+  if (is.null(criteria) || length(criteria) == 0) {
+    return(data)
+  }
+  
+  data %>%
+    filter(!!!criteria)
+}
+
 #' @name identify_endemicity
 #' @export 
 #' @param processed_data extracted and processed data
@@ -832,7 +848,7 @@ plot_spatial_distribution_map <- function(plot_data,
     geom_sf(data = national_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
     geom_sf(data = subnational_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
     scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
-    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2023)") +  # Option C
+    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
              ylim = c(st_bbox(data_shp)["ymin"], st_bbox(data_shp)["ymax"]),
              expand = FALSE) +
