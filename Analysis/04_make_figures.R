@@ -11,6 +11,7 @@ library(patchwork)
 library(cowplot)
 library(grid)
 library(dplyr)
+library(RColorBrewer)
 
 source("Analysis/utils.R")
 
@@ -128,13 +129,11 @@ who_data<-read.csv("Data/endemicity/who_annual_report.csv") %>%
   merge(.,read.csv("Data/endemicity/country_location_id_name.csv"),by.x="location_id",by.y="id",all.x=TRUE) %>%
   filter(is.na(region)==F) %>%
   arrange(region) %>%
-  mutate(region = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
-  filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2020-12-31")) %>% 
-  group_by(region) %>% 
-  summarize(
-    num_year_exceeding_10_cases = length(suspected_cases[suspected_cases>10]),
-    percent_year_exceeding_10_cases = round(length(suspected_cases[suspected_cases>10])/24 * 100,0)
-  )
+  mutate(country = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
+  filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2023-12-31")) %>% 
+  mutate(year = lubridate::year(time_right)) %>% 
+  select(country,suspected_cases,year)
+
 
 fig2a <- plot_spatial_distribution_map(plot_data = plot_data,
                                        country_col="eff_country",
@@ -273,33 +272,83 @@ ggsave("Figures/fig2.png", fig2_combined,
 
 # Supplement figures ----
 ## Figure S1.Map of all location shapefiles ----
+library(tidyverse)
+library(rgeoboundaries)
+library(sf)
+sf::sf_use_s2(FALSE)
+world <- gb_adm0()  # ADM0 = national boundaries
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
-figS1 <- ggplot(shapefiles) +
-  geom_sf(fill='white',color='black') + 
-  theme_bw() 
+shapefiles <- st_transform(shapefiles, crs = st_crs(world))
+
+loc_subnational <- plot_data %>% 
+  distinct(lctn_pr,admin_level) %>% 
+  filter(admin_level == 'sub-national')
+
+loc_national <- plot_data %>% 
+  distinct(lctn_pr,admin_level) %>% 
+  filter(admin_level == 'national')
+
+loc_regional <- plot_data %>% 
+  distinct(lctn_pr,admin_level) %>% 
+  filter(admin_level == 'regional')
+
+blues <- brewer.pal(n = 4, name = "Blues")[-1]  # Remove lightest
+names(blues) <- c("Regional", "National", "Subnational")  # assign manually to match levels
+
+shapefiles_tagged <- bind_rows(
+  shapefiles %>% filter(lctn_pr %in% unique(loc_regional$lctn_pr)) %>% mutate(spatial_scale = "Regional"),
+  shapefiles %>% filter(lctn_pr %in% unique(loc_national$lctn_pr)) %>% mutate(spatial_scale = "National"),
+  shapefiles %>% filter(lctn_pr %in% unique(loc_subnational$lctn_pr)) %>% mutate(spatial_scale = "Subnational")
+)
+
+shapefiles_tagged$spatial_scale <- factor(
+  shapefiles_tagged$spatial_scale,
+  levels = c("Regional", "National", "Subnational")
+)
+
+figS1 <- ggplot() +
+  geom_sf(data = world, fill = "grey95", color = "grey70", size = 0.2) +
+  geom_sf(data = shapefiles_tagged, aes(fill = spatial_scale, color = spatial_scale), size = 0.4) +
+  scale_fill_manual(
+    name = "Spatial Scale",
+    values = blues
+  ) +
+  scale_color_manual(
+    values = blues,
+    guide = "none"
+  ) +
+  theme_bw() +
+  coord_sf(expand = FALSE)
 
 ggsave('Figures/figS1.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
 
 ## Figure S3. Histogram of time period duration and median by continent ----
-# Create a named label for median lines
-duration_medians <- plot_data %>%
-  group_by(continent) %>%
-  summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
-  mutate(line_label = "Median duration")
+plot_data_binned <- plot_data %>%
+  mutate(duration_years = floor(duration_days / 365),
+         bin_group = floor(duration_years / 5) * 5,
+         bin_midpoint = bin_group + 2.5)  # for bar center on numeric x
 
-figS3 <- ggplot(plot_data) +
-  geom_histogram(aes(x = duration_days, fill = continent, color = continent), 
-                 binwidth = 365, position = "stack") +
+plot_data_summary <- plot_data_binned %>%
+  group_by(continent, bin_midpoint) %>%
+  summarise(n = n(), .groups = "drop")
+
+figS3 <- ggplot() +
+  geom_col(data = plot_data_summary,
+           aes(x = bin_midpoint, y = n, fill = continent, color = continent),
+           position = position_dodge(width = 4.5), width = 4) +  # spacing control
   geom_vline(data = duration_medians, 
-             aes(xintercept = median_duration, color = continent, linetype = line_label),
+             aes(xintercept = median_duration / 365, color = continent, linetype = line_label),
              linewidth = 0.8) +
   scale_fill_manual(values = continent_colors) +
   scale_color_manual(values = continent_colors) +
-  scale_linetype_manual(values = c("Median duration" = "dashed")) + 
+  scale_linetype_manual(values = c("Median duration" = "dashed")) +
+  scale_x_continuous(
+    name = "Study Duration (years, grouped every 5 years)",
+    breaks = seq(0, max(plot_data$duration_days, na.rm = TRUE)/365, by = 5)
+  ) +
   labs(
-    x = "Study Duration (days)",
     y = "Study Count",
     fill = "Continent",
     color = "Continent",
@@ -347,3 +396,21 @@ figS4 <- ggplot(plot_data_country) +
   facet_wrap(~eff_country)
 
 ggsave('Figures/figS4.png',plot=figS4,width = 16, height = 8, dpi = 300, bg = "white")
+
+# Exploratory figures ----
+## Fig.E1: distributions of % of years with reported cases between 2000-2023 ----
+summary <- identify_endemicity(
+  processed_data = plot_data,
+  who_data = who_data,
+  group_col = "exp_class"
+)
+
+ggplot(summary, aes(x = percent_year_with_cases)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "white", boundary = 0, closed = "left") +
+  facet_wrap(~ exp_class) +
+  labs(
+    title = "Distribution of % of Years with Reported Cholera Cases (2000-2023)",
+    x = "% of Years with Reported Cases",
+    y = "Number of Countries"
+  ) +
+  theme_bw()
