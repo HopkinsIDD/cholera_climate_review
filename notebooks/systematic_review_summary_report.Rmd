@@ -8,6 +8,8 @@ output:
     number_sections: true
 params:
   data_path: "Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
+  who_data_path: "Data/endemicity/who_annual_report.csv"
+  location_file_path: "Data/endemicity/country_location_id_name.csv"
 ---
 
 ```{r setup, echo=F}
@@ -45,9 +47,20 @@ data <- readr::read_csv(here::here(params$data_path)) %>%
 # Total number of studies
 total_studies <- n_distinct(data$studykey)
 
+# Number of studies with more than 1 exposure
+studies_with_more_than_one_exposure <- data %>% 
+  distinct(studykey, exp_class) %>% 
+  group_by(studykey) %>% 
+  summarize(n_exp = length(unique(exp_class))) %>% 
+  mutate(n_exp = ifelse(n_exp ==1,n_exp,">1")) %>% 
+  filter(n_exp == ">1") %>% 
+  count(n_exp, name = 'n_studies') %>% 
+  pull(n_studies)
+
 exposure_counts <- data %>%
   distinct(studykey, exp_class) %>%
   count(exp_class, name = "n_studies") %>%
+    add_row(exp_class = ">1 exposure class", n_studies = studies_with_more_than_one_exposure) %>% 
   add_row(exp_class = "Total", n_studies = total_studies)
 
 exposure_counts %>%
@@ -1056,6 +1069,67 @@ make_summary_table1(data = data, "admin_level", "Category")
 make_summary_table1(data = data, "study_duration", "Category")
 ```
 
+### Table 1. % of years with WHO reported cases 
+```{r}
+who_data<-read.csv(here::here(params$who_data_path)) %>%
+  tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id','primary'),sep = ';',remove=T) %>%
+  filter(primary == 't') %>% 
+  merge(.,read.csv(here::here(params$location_file_path)),by.x="location_id",by.y="id",all.x=TRUE) %>%
+  filter(is.na(region)==F) %>%
+  arrange(region) %>%
+  mutate(country = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
+  filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2023-12-31")) %>% 
+  mutate(year = lubridate::year(time_right)) %>% 
+  select(country,suspected_cases,year)
+
+summary_tbl <- identify_endemicity(
+  processed_data = data,
+  who_data = who_data,
+  group_col = 'exp_class'
+) %>%
+  mutate(endemicity_group = case_when(
+    percent_year_with_cases <= 50 ~ "0-50%",
+    percent_year_with_cases > 50 & percent_year_with_cases <= 95 ~ "50-95%",
+    percent_year_with_cases > 95 ~ ">95%"
+  )) %>%
+  group_by(endemicity_group, exp_class) %>%
+  summarize(n = n_distinct(country), .groups = "drop") %>%
+  group_by(exp_class) %>%
+  mutate(percent = round(n / sum(n) * 100, 1),
+         formatted = paste0(n, " (", percent, "%)")) %>%
+  ungroup() %>%
+  select(endemicity_group, exp_class, formatted) %>%
+  pivot_wider(names_from = exp_class, values_from = formatted, values_fill = "0 (0%)") 
+
+summary_tbl %>%
+  gt() %>%
+  tab_header(title = "Study Population by Endemicity Group and Exposure Type")
+```
+```{r}
+summary_tbl <- identify_endemicity(
+  processed_data = data,
+  who_data = who_data,
+  group_col = NULL
+) %>%
+  mutate(endemicity_group = case_when(
+    percent_year_with_cases <= 50 ~ "0-50%",
+    percent_year_with_cases > 50 & percent_year_with_cases <= 95 ~ "50-95%",
+    percent_year_with_cases > 95 ~ ">95%"
+  )) %>%
+  group_by(endemicity_group) %>%
+  summarize(n = n_distinct(country), .groups = "drop") %>%
+  mutate(percent = round(n / sum(n) * 100, 1),
+         formatted = paste0(n, " (", percent, "%)")) %>%
+  ungroup() %>%
+  mutate(group = "overall") %>% 
+  select(endemicity_group,group, formatted) %>%
+  pivot_wider(names_from = group, values_from = formatted, values_fill = "0 (0%)") 
+
+summary_tbl %>%
+  gt() %>%
+  tab_header(title = "Study Population by Endemicity Group Type")
+```
+
 ## Table 1. Outcome characteristics
 ### Table 1. Outcome type
 ```{r}
@@ -1210,4 +1284,65 @@ make_summary_table1(data =study_avg_score_total, "avg_exp_score_est","Category",
 ```{r}
 make_summary_table1(data =study_avg_score, "avg_a_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 make_summary_table1(data =study_avg_score_total, "avg_a_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
+```
+
+## Other statistics reported in the manuscript
+```{r}
+summary <- identify_endemicity(
+  processed_data = data,
+  who_data = who_data,
+  group_col = 'continent'
+) %>% 
+  group_by(continent) %>% 
+  summarize(
+    total = length(unique(country))
+  )
+
+data1 <- data %>% 
+  select(eff_country, continent, admin_level) %>% 
+  separate_rows(eff_country, sep = "\\|") %>% 
+  distinct()
+
+africa_data <- data1 %>% filter(continent == "Africa")
+asia_data <- data1 %>% filter(continent == "Asia")
+
+africa_covered <- africa_data %>% filter(admin_level %in% c("national", "subnational")) %>% 
+  distinct(eff_country) %>% nrow()
+
+asia_covered <- asia_data %>% filter(admin_level %in% c("national", "subnational")) %>% 
+  distinct(eff_country) %>% nrow()
+
+africa_total <- summary %>% filter(continent == "Africa") %>% pull(total)
+asia_total <- summary %>% filter(continent == "Asia") %>% pull(total)
+
+africa_percent <- (africa_covered / africa_total) * 100
+asia_percent <- (asia_covered / asia_total) * 100
+
+table_data <- tibble(
+  Continent = c("Africa", "Asia"),
+  Total_Countries = c(africa_total, asia_total),
+  Covered = c(africa_covered, asia_covered),
+  Percent_Covered = c(africa_percent, asia_percent)
+)
+
+cat(sprintf("Among the %d countries in Africa with reported cholera in the past 24 years (2000-2023), only %.1f%% (N=%d) were covered by at least one study at national or subnational level, as opposed to %.1f%% (N=%d of %d) in Asia.",
+            africa_total, africa_percent, africa_covered,
+            asia_percent, asia_covered, asia_total))
+```
+```{r}
+studies_covering_multiyears <- period_table %>%
+  distinct(studykey, study_duration) %>% 
+  filter(study_duration != "<1 year") %>% 
+  summarise(
+    total = n_distinct(studykey)
+  )
+
+studies_covering_over_decase <- period_table %>%
+  distinct(studykey, study_duration) %>% 
+  filter(study_duration == ">10 years") %>% 
+  summarise(
+    total = n_distinct(studykey)
+  )
+cat(sprintf("The majority of studies covered multiple years (N=%d) and almost half covered more than 10 years (N=%d).",
+            studies_covering_multiyears$total, studies_covering_over_decase$total))
 ```
