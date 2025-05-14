@@ -201,7 +201,7 @@ filter_final_analysis_dataset <- function(data, criteria = NULL) {
   }
   
   data %>%
-    filter(!!criteria)
+    filter(!!!criteria)
 }
 
 #' @name identify_endemicity
@@ -218,59 +218,47 @@ filter_final_analysis_dataset <- function(data, criteria = NULL) {
 
 identify_endemicity <- function(
     processed_data = processed_extracted_data,
-    study_year_col = "year_tl",
-    study_year_lb = 1000,
     study_country_col = "eff_country",
-    who_data = report %>% mutate(year = lubridate::year(time_left)),
+    who_data = who_data,
     who_year_col = "year",
-    who_country_col = "region",
+    who_country_col = "country",
     who_case_col = "suspected_cases",
-    prior_year_with_sCh = 3
+    group_col = "continent"
 ) {
   
   library(dplyr)
   library(tidyr)
+  library(stringr)
+  library(rlang)
   
-  processed_data <- processed_data %>% 
-    mutate(!!study_year_col := as.numeric(!!sym(study_year_col)))
+  country_group <- processed_data %>% 
+    select(all_of(c(study_country_col, group_col))) %>% 
+    separate_rows(!!sym(study_country_col), sep = "\\|") %>% 
+    distinct() %>%
+    rename(country_for_merge = !!sym(study_country_col))
   
-  processed_data <- processed_data %>%
-    rowwise() %>%
+  who_data_flagged <- who_data %>% 
+    filter(.data[[who_country_col]] %in% country_group$country_for_merge) %>% 
     mutate(
-      endemicity_status = {
-        study_year <- get(study_year_col)
-        study_country <- get(study_country_col)
-        
-        if (study_year < study_year_lb + prior_year_with_sCh) {
-          status <- "Unknown"
-          
-        } else {
-          valid_years <- seq(max(study_year_lb, study_year - 100), study_year - 1)
-          
-          full_years_df <- tibble(
-            !!who_year_col := valid_years,
-            !!who_country_col := study_country
-          )
-          
-          who_filtered <- full_years_df %>%
-            left_join(who_data, by = c(who_year_col, who_country_col))
-          
-          if (all(is.na(who_filtered[[who_case_col]]))) {
-            status <- "Unknown"
-          } else {
-            # Replace NA with 0 if there is any non-NA year
-            who_filtered[[who_case_col]][is.na(who_filtered[[who_case_col]])] <- 0
-            reported_years <- sum(who_filtered[[who_case_col]] > 0)
-            
-            status <- ifelse(reported_years >= prior_year_with_sCh, "Endemic", "Non-Endemic")
-          }
-        }
-        status
-      }
-    ) %>%
-    ungroup()
+      has_cases = !is.na(.data[[who_case_col]]) & .data[[who_case_col]] > 0
+    )
   
-  return(processed_data)
+  endemicity_summary <- who_data_flagged %>%
+    group_by(.data[[who_country_col]]) %>%
+    summarise(
+      n_years_with_data = n_distinct(.data[[who_year_col]]),
+      n_years_with_cases = n_distinct(.data[[who_year_col]][has_cases]),
+      percent_year_with_cases = round(n_years_with_cases / n_years_with_data * 100, 0),
+      .groups = "drop"
+    )
+  
+  final_summary <- endemicity_summary %>%
+    left_join(
+      country_group,
+      by = setNames("country_for_merge", who_country_col)
+    )
+  
+  return(final_summary)
 }
 
 # Data summary -----------------------------------------------
