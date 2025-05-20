@@ -355,7 +355,73 @@ figS4 <- ggplot(plot_data_country) +
 
 ggsave('Figures/figS4.png',plot=figS4,width = 16, height = 8, dpi = 300, bg = "white")
 
+## Figure S5. Tile plot by study for each exposure variable ----
+quality_data <- plot_data %>%
+  mutate(
+    exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+    exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
+    exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
+    out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
+    out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+    out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
+    out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
+    a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+    a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+    a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+    a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
+    tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
+      out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
+      a_class_tf + a_adjusted_tf + a_uncert_def_tf,
+    exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
+    out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
+    a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
+  )  %>% 
+  group_by(studykey,exp_class) %>%
+  summarise(
+    exp_temp_perfect = as.integer(all(exp_temp_tf == 1)),
+    exp_spatial_perfect = as.integer(all(exp_spatial_tf == 1)),
+    exp_source_perfect = as.integer(all(exp_source_tf == 1)),
+    
+    out_class_case_presentation_perfect = as.integer(all(out_class_case_presentation_tf == 1)),
+    out_temp_perfect = as.integer(all(out_temp_tf == 1)),
+    out_spatial_perfect = as.integer(all(out_spatial_tf == 1)),
+    out_case_df_perfect = as.integer(all(out_case_df_tf == 1)),
+    
+    a_match_perfect = as.integer(all(a_match_tf == 1)),
+    a_class_perfect = as.integer(all(a_class_tf == 1)),
+    a_adjusted_perfect = as.integer(all(a_adjusted_tf == 1)),
+    a_uncert_def_perfect = as.integer(all(a_uncert_def_tf == 1)),
+    
+    .groups = "drop"
+  ) %>% 
+  select(studykey, 
+         exp_class,
+         exp_temp_perfect,
+         exp_spatial_perfect,
+         out_class_case_presentation_perfect,
+         out_temp_perfect,
+         out_spatial_perfect,
+         out_case_df_perfect,
+         a_match_perfect,
+         a_class_perfect,
+         a_adjusted_perfect,
+         a_uncert_def_perfect)
 
+plot_long <- quality_data %>%
+  filter(exp_class=='precipitation') %>% 
+  select(!exp_class) %>% 
+  pivot_longer(
+    cols = -studykey,
+    names_to = "variable",
+    values_to = "is_perfect"
+  )
+
+ggplot(plot_long, aes(x = variable, y = studykey, fill = factor(is_perfect))) +
+  geom_tile(color = "white") +
+  scale_fill_manual(values = c("0" = "lightgray", "1" = "steelblue"), name = "Perfect Score") +
+  labs(x = "Quality Dimension", y = "Study") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ## Stratification by continent ----
 
