@@ -196,6 +196,22 @@ get_out_tempscale_dict <- function() {
     "99" = "missing")
 }
 
+#' @name filter_final_analysis_dataset
+#' @description
+#' This function aims to filter out the final analysis dataset based on a list of criteria
+#' @param data extracted and processed data.
+#' @param criteria A list of criterias that are used to filter out the analysis dataset. The default is NULL.
+filter_final_analysis_dataset <- function(data, criteria = NULL) {
+  library(rlang)
+  
+  if (is.null(criteria) || length(criteria) == 0) {
+    return(data)
+  }
+  
+  data %>%
+    filter(!!!criteria)
+}
+
 #' @name identify_endemicity
 #' @export 
 #' @param processed_data extracted and processed data
@@ -210,59 +226,47 @@ get_out_tempscale_dict <- function() {
 
 identify_endemicity <- function(
     processed_data = processed_extracted_data,
-    study_year_col = "year_tl",
-    study_year_lb = 1000,
     study_country_col = "eff_country",
-    who_data = report %>% mutate(year = lubridate::year(time_left)),
+    who_data = who_data,
     who_year_col = "year",
-    who_country_col = "region",
+    who_country_col = "country",
     who_case_col = "suspected_cases",
-    prior_year_with_sCh = 3
+    group_col = "continent"
 ) {
   
   library(dplyr)
   library(tidyr)
+  library(stringr)
+  library(rlang)
   
-  processed_data <- processed_data %>% 
-    mutate(!!study_year_col := as.numeric(!!sym(study_year_col)))
+  country_group <- processed_data %>% 
+    select(all_of(c(study_country_col, group_col))) %>% 
+    separate_rows(!!sym(study_country_col), sep = "\\|") %>% 
+    distinct() %>%
+    rename(country_for_merge = !!sym(study_country_col))
   
-  processed_data <- processed_data %>%
-    rowwise() %>%
+  who_data_flagged <- who_data %>% 
+    filter(.data[[who_country_col]] %in% country_group$country_for_merge) %>% 
     mutate(
-      endemicity_status = {
-        study_year <- get(study_year_col)
-        study_country <- get(study_country_col)
-        
-        if (study_year < study_year_lb + prior_year_with_sCh) {
-          status <- "Unknown"
-          
-        } else {
-          valid_years <- seq(max(study_year_lb, study_year - 100), study_year - 1)
-          
-          full_years_df <- tibble(
-            !!who_year_col := valid_years,
-            !!who_country_col := study_country
-          )
-          
-          who_filtered <- full_years_df %>%
-            left_join(who_data, by = c(who_year_col, who_country_col))
-          
-          if (all(is.na(who_filtered[[who_case_col]]))) {
-            status <- "Unknown"
-          } else {
-            # Replace NA with 0 if there is any non-NA year
-            who_filtered[[who_case_col]][is.na(who_filtered[[who_case_col]])] <- 0
-            reported_years <- sum(who_filtered[[who_case_col]] > 0)
-            
-            status <- ifelse(reported_years >= prior_year_with_sCh, "Endemic", "Non-Endemic")
-          }
-        }
-        status
-      }
-    ) %>%
-    ungroup()
+      has_cases = !is.na(.data[[who_case_col]]) & .data[[who_case_col]] > 0
+    )
   
-  return(processed_data)
+  endemicity_summary <- who_data_flagged %>%
+    group_by(.data[[who_country_col]]) %>%
+    summarise(
+      n_years_with_data = n_distinct(.data[[who_year_col]]),
+      n_years_with_cases = n_distinct(.data[[who_year_col]][has_cases]),
+      percent_year_with_cases = round(n_years_with_cases / n_years_with_data * 100, 0),
+      .groups = "drop"
+    )
+  
+  final_summary <- endemicity_summary %>%
+    left_join(
+      country_group,
+      by = setNames("country_for_merge", who_country_col)
+    )
+  
+  return(final_summary)
 }
 
 # Data summary -----------------------------------------------
@@ -789,12 +793,13 @@ plot_spatial_distribution_map <- function(plot_data,
                                           country_col,
                                           group_col = NULL,
                                           group_levels = NULL,
-                                          endemicity_col = NULL) {
+                                          who_data = who_data) {
   
   library(rgeoboundaries)
   library(sf)
   library(tidyverse)
   
+  # Compute the count of studies per country
   if (!is.null(group_col)) {
     country_counts <- plot_data %>% 
       distinct(studykey, !!sym(country_col), !!sym(group_col)) %>% 
@@ -821,51 +826,36 @@ plot_spatial_distribution_map <- function(plot_data,
   )
   world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf)
   
-  if (!is.null(group_col)) {
-    if (is.null(group_levels)) {
-      group_levels <- sort(unique(plot_data[[group_col]]))
-    }
-    data_shp <- world_sf_combined %>%
-      left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      left_join(plot_data %>% distinct(!!sym(country_col), !!sym(endemicity_col)),
-                by = c("shapeISO" = country_col)) %>%
-      filter(!is.na(n_studies)) %>%
-      mutate(!!sym(group_col) := factor(!!sym(group_col), levels = group_levels))
-  } else {
-    data_shp <- world_sf_combined %>%
-      left_join(country_counts, by = c("shapeISO" = country_col)) %>%
-      left_join(plot_data %>% distinct(!!sym(country_col), !!sym(endemicity_col)),
-                by = c("shapeISO" = country_col)) %>%
-      filter(!is.na(n_studies))
-  }
+  # Join WHO data to the spatial data
+  data_shp <- world_sf_combined %>%
+    left_join(country_counts, by = c("shapeISO" = country_col)) %>%
+    filter(!is.na(n_studies)) %>%
+    left_join(who_data, by = c("shapeISO" = "region"))
   
-  data_shp <- data_shp %>%
-    mutate(endemic_flag = case_when(
-      !!sym(endemicity_col) == "Endemic" ~ "Countries with more than a decade of\nreported cases in 2000-2022",
-      TRUE ~ NA_character_
-    ))
+  # 
+  regional_sf <- data_shp %>% filter(admin_level == "regional")
+  national_sf <- data_shp %>% filter(admin_level == "national")
+  subnational_sf <- data_shp %>% filter(admin_level == "sub-national")
   
+  # Plot the map with custom borders and merged panels
   ggplot() +
-    geom_sf(data = world_sf_combined, fill = "gray95", color = "gray95", size = 0.1) +
-    geom_sf(data = data_shp, aes(fill = n_studies), color = "gray95", size = 0.2) +
-    geom_sf(data = data_shp %>% filter(!is.na(endemic_flag)),
-            aes(color = endemic_flag), fill = NA, linewidth = 0.3) +
-    scale_fill_viridis_c(direction = -1, name = "Number of Papers", na.value = "white") +
-    scale_color_manual(name = NULL, values = c("Countries with more than a decade of\nreported cases in 2000-2022" = "red")) +
-    {
-      if (!is.null(group_col)) facet_grid(rows = vars(!!sym(group_col)), switch = "y") else NULL
-    } +
+    geom_sf(data = world_sf_combined, fill = "gray95", color = NA, size = 0.1) +
+    geom_sf(data = regional_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
+    geom_sf(data = national_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
+    geom_sf(data = subnational_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
+    scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
+    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
              ylim = c(st_bbox(data_shp)["ymin"], st_bbox(data_shp)["ymax"]),
              expand = FALSE) +
     theme_bw() +
     theme(
       legend.position = "bottom",
-      strip.text.y.left = element_text(size = 10, face = "bold"),
-      strip.placement = "outside",
       plot.title = element_text(face = "bold", hjust = 0)
-    )
+    ) +
+    ggtitle("Spatial Distribution of Studies by Country")
 }
+
 
 # Misc --------------------------------------------------------------------
 
@@ -1224,3 +1214,4 @@ print_vote_table_scores <- function(stats_by_score,
     gt_group(.list = .)
   
 }
+
