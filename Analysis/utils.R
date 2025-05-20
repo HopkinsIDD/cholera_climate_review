@@ -173,7 +173,7 @@ get_estimate_thresholds <- function() {
 }
 
 get_all_covar_patterns <- function() {
-  "continent|admin_level|full_score|lag_class|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
+  "continent|admin_level|full_score|lag_class|out_temp_scale|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
 }
 
 get_all_effects <- function() {
@@ -186,6 +186,14 @@ get_all_exp_class <- function() {
 
 get_all_out_class <- function() {
   c("occurrence", "incidence")
+}
+
+get_out_tempscale_dict <- function() {
+  c("1" = "0-14 days",
+    "2" = "15-30 days",
+    "3" = "31 days-1 year",
+    "4" = "> 1 year",
+    "99" = "missing")
 }
 
 #' @name identify_endemicity
@@ -601,8 +609,8 @@ add_doe_styling2 <- function(gtx) {
       admin_level = md("Admin level"),
       out_class_case_presentation = md("Confirmation"),
       # Outcomes
-      incidence = md(vert_lab("incidence")),
-      occurrence = md(vert_lab("occurrence"))
+      incidence = md(vert_lab("Incid.")),
+      occurrence = md(vert_lab("Occur."))
     ) %>%
     tab_spanner(
       label = "Outcomes",
@@ -903,7 +911,7 @@ make_filename <- function(basename,
 }
 
 parse_stan_opt <- function(opt) {
-  res <- str_glue("effect-{opt$effect}_exp-{opt$exp_class}_out-{opt$out_class}")
+  res <- str_glue("effect-{opt$effect}_exp-{opt$exp_class}_out-{opt$out_class}_strat-{opt$stratification}-{opt$level}")
   
   if (is.null(res)) {
     stop("Failed parsing options.")
@@ -1052,18 +1060,46 @@ getPostStratMatrix <- function(variable,
 
 # Post-processing ---------------------------------------------------------
 
+parse_info <- function(x, pattern) {
+  str_extract(x, pattern %>% str_c(collapse = "|"))
+}
+
+
+#' get_run_info
+#' Get information on run from file name
+#' @param x file name
+#'
+#' @returns tibble with info
+#' 
+get_run_info <- function(x) {
+  
+  tibble(
+    effect = parse_info(x, get_all_effects()),
+    exp_class = parse_info(x, get_all_exp_class()),
+    out_class = parse_info(x, get_all_out_class()),
+    stratification = parse_info(x, get_all_covar_patterns()),
+    level = str_extract(x, str_glue("(?<={stratification}-)(.)*(?=\\.)"))
+  ) %>% 
+    replace_na(list(stratification = "none",
+                    level = "all"))
+  
+}
 
 get_effect_sizes <- function(res_files) {
   map_df(res_files, function(x) {
-    stan_fit <- readRDS(x)
-    effect <- str_extract(x, get_all_effects() %>% str_c(collapse = "|"))
-    exp_class <- str_extract(x, get_all_exp_class() %>% str_c(collapse = "|"))
-    out_class <- str_extract(x, get_all_out_class() %>% str_c(collapse = "|"))
     
+    # Read stan fit and data
+    stan_fit <- readRDS(x)
     stan_data <- readRDS(str_replace(x, "stan_fit", "stan_data"))
+    
+    # Information on run (exposure, outcome, stratification)
+    run_info <- get_run_info(x)
+    
+    # Parse strata levels
     strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
     
-    stan_fit$summary("beta") %>%
+    # Get draw summaries and add info
+    stan_fit$summary("eff_size") %>%
       mutate(var = colnames(stan_data$X),
              what = str_extract(var, get_all_covar_patterns()),
              strata = str_remove(var, what),
@@ -1071,13 +1107,25 @@ get_effect_sizes <- function(res_files) {
       filter(!is.na(what)) %>% 
       mutate(what = map_chr(what, function(w) {
         ref <- levels(stan_data$data[[w]])[1]
+        w <- get_covar_dict()[w]
         str_c(w, "\nref:", ref)
       })) %>% 
       select(what, strata, mean, q5, q95) %>% 
-      mutate(effect = effect,
-             exp_class = exp_class,
-             out_class = out_class)
-  })
+      bind_cols(run_info)
+  }) 
+}
+
+get_covar_dict <- function() {
+  c(
+    "lag_class" = "temporal lag",
+    "out_temp_scale" = "temporal resolution\nof outcome",
+    "continent" = "continent",
+    "hdi_cat" = "HDI",
+    "inland_coast" = "Distance\nto coast",
+    "new_climatic_zone" = "climatic zone",
+    "rainy_season" = "seasonal\ntiming",
+    "urban_rural_class" = "urbanicity"
+  )
 }
 
 

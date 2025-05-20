@@ -96,12 +96,14 @@ model {
   
   beta ~ normal(0, .5);
   eta_raw ~ std_normal();
-  sigma_re ~ normal(0, 2);
+  sigma_re ~ normal(0, 1);
 }
 
 generated quantities {
   vector[U_poststrat] poststrat;    // postsratified mean
+  vector[U_poststrat] poststrat_pred_mean;    // expectation of postsratified prediction interval mean 
   vector[U_poststrat] poststrat_pred;    // postsratified prediction interval mean 
+  vector[J] eff_size = exp(beta);
   
   {
     vector[U_covar] eta;          // logit-linear perdictor 
@@ -119,7 +121,8 @@ generated quantities {
       eta_re[i] = integrate_1d(to_integrate, 0, 1, par, x_r, x_i, 1e-8);
     }
     
-    poststrat_pred = poststrat_mat_comb * eta_re;
+    poststrat_pred = poststrat_mat_comb * inv_logit(eta + normal_rng(0, sigma_re));
+    poststrat_pred_mean = poststrat_mat_comb * eta_re;
   }
 }
 

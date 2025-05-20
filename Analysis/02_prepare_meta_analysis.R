@@ -13,9 +13,13 @@ option_list <- list(
   make_option(c("-e", "--effect"), 
               default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
-              default = "temperature", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "precipitation", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-o", "--out_class"), 
-              default = "occurrence", action ="store", type = "character", help = "Make intermediate plots.")
+              default = "incidence", action ="store", type = "character", help = "Make intermediate plots."),
+  make_option(c("-l", "--level"), 
+              default = "Asia", action ="store", type = "character", help = "Stratification level"),
+  make_option(c("-s", "--stratification"), 
+              default = "continent", action ="store", type = "character", help = "Stratification column")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -60,6 +64,16 @@ data <- data %>%
     urban_rural_class = factor(urban_rural_class, levels = c("rural", "mixed", "urban"))) %>% 
   filter(admin_level %in% c("national", "sub-national"))
 
+
+# Stratification
+
+if (opt$stratification != "none") {
+  cat("Stratifying data by", opt$stratification, ":", opt$level, "\n")
+  
+  data <- data %>% 
+    filter(!!rlang::sym(opt$stratification) == opt$level)
+}
+
 if (nrow(data) == 0) {
   # https://stackoverflow.com/questions/17837289/break-exit-script
   exit <- function() { invokeRestart("abort") }    
@@ -83,7 +97,21 @@ if (opt$effect == "corr") {
 options(na.action='na.pass')
 
 # Regression equation
-eq <- ~ continent + lag_class + rainy_season + urban_rural_class + new_climatic_zone + hdi_cat + inland_coast
+eq_str <- c(
+  "continent", 
+  "rainy_season",
+  "urban_rural_class",
+  "new_climatic_zone",
+  "hdi_cat",
+  "inland_coast",
+  "lag_class",
+  "out_temp_scale"
+) %>% 
+  setdiff(opt$stratification) %>% 
+  str_c(collapse = " + ") %>% 
+  str_c("~", .)
+
+eq <- as.formula(eq_str)
 
 # Parse the list of covariates used to save
 all_covars <- as.character(eq)[2] %>% 
@@ -239,10 +267,13 @@ stan_data <- list(
 )
 
 # Save
-saveRDS(list(data = data,
-             X = X, 
-             X = X_missing,
-             all_covars = all_covars,
-             stan_data = stan_data,
-             postrat_names = postrat_names),
-        file = make_stan_data_filename(opt = opt))
+saveRDS(
+  list(
+    data = data,
+    X = X, 
+    X = X_missing,
+    all_covars = all_covars,
+    stan_data = stan_data,
+    postrat_names = postrat_names),
+  file = make_stan_data_filename(opt = opt)
+)

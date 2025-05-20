@@ -107,10 +107,10 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   mutate(a_uncert_significant = factor(a_uncert_significant, 
                                        levels = c("TRUE", "FALSE", "NA"),
                                        labels = c("TRUE", "FALSE", "unspecified"))) %>% 
+  mutate(out_temp_scale = factor(get_out_tempscale_dict()[as.character(out_temp_scale)], levels = get_out_tempscale_dict())) %>% 
   mutate(new_climatic_zone = factor(new_climatic_zone),
          inland_coast = factor(inland_coast),
          hdi_cat = factor(hdi_cat))
-
 
 # Save
 saveRDS(est_data, file = "generated_data/processed_estimate_data.rds")

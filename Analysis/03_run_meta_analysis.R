@@ -12,11 +12,15 @@ source("Analysis/utils.R")
 # User-supplied options
 option_list <- list(
   make_option(c("-e", "--effect"), 
-              default = "corr", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "direction_positive", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-c", "--exp_class"), 
-              default = "temperature", action ="store", type = "character", help = "Make intermediate plots."),
+              default = "precipitation", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-o", "--out_class"), 
-              default = "incidence", action ="store", type = "character", help = "Make intermediate plots.")
+              default = "incidence", action ="store", type = "character", help = "Make intermediate plots."),
+  make_option(c("-l", "--level"), 
+              default = "Asia", action ="store", type = "character", help = "Stratification level"),
+  make_option(c("-s", "--stratification"), 
+              default = "continent", action ="store", type = "character", help = "Stratification column")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -39,22 +43,28 @@ stan_fit <-  stan_model$sample(
     stan_data$stan_data, 
     list(transform = 1)
   ),
-  iter_warmup = 100,
-  iter_sampling = 100,
+  iter_warmup = 250,
+  iter_sampling = 500,
   parallel_chains = 4,
   init = .1,
   max_treedepth = 10
 )
 
-stan_fit$save_object(make_stan_fit_filename(opt = opt))
+# stan_fit$save_object(make_stan_fit_filename(opt = opt))
+# 
+# stan_fit$summary(c("sigma_re", "beta"))
+# stan_fit$draws(c("beta")) %>%
+#   bayesplot::mcmc_intervals()
+# stan_fit$draws(c("poststrat_pred", "poststrat_pred_mean")) %>% 
+#   bayesplot::mcmc_intervals()
 
-# p_corr <- stan_fit$summary("poststrat") %>% 
-  # mutate(var = stan_data$postrat_names,
-  #        what = str_split(var, "-") %>% map_chr(~.[1]),
-  #        strata = str_split(var, "-") %>% map_chr(~.[2]),
-  #        strata = factor(strata, levels = stan_data$postrat_names %>% str_split("-") %>% map_chr(~.[2]))) %>%
+# p_corr <- stan_fit$summary("poststrat") %>%
+#   mutate(var = stan_data$postrat_names,
+#          what = str_split(var, "-") %>% map_chr(~.[1]),
+#          strata = str_split(var, "-") %>% map_chr(~.[2]),
+#          strata = factor(strata, levels = stan_data$postrat_names %>% str_split("-") %>% map_chr(~.[2]))) %>%
 #   ggplot(aes(x = strata, y = mean)) +
-#   geom_errorbar(aes(ymin = q5, ymax = q95), width = 0) + 
+#   geom_errorbar(aes(ymin = q5, ymax = q95), width = 0) +
 #   geom_point() +
 #   geom_hline(aes(yintercept = 0), lty = 2, lwd = .5) +
 #   facet_grid(. ~ what, scales = "free", space = "free") +
@@ -63,19 +73,29 @@ stan_fit$save_object(make_stan_fit_filename(opt = opt))
 #   labs(y = "correlation")
 # 
 # ggsave(p_corr, filename = "figures/poststrat_corrlation.png", width = 12, height = 5) 
+
+# stan_fit$summary("eta_re")
+# stan_fit$summary("sigma_re")
 # 
-# p_pos <- stan_fit$summary("poststrat") %>% 
-#   mutate(var = stan_data$postrat_names,
-#          what = str_split(var, "-") %>% map_chr(~.[1]),
+# pd <- position_dodge(.2)
+# p_pos <- stan_fit$summary("poststrat") %>%
+#   mutate(set = "mean",
+#          var = stan_data$postrat_names) %>%
+#   bind_rows(stan_fit$summary("poststrat_pred") %>%
+#               mutate(set = "pred",
+#                      var = stan_data$postrat_names)) %>%
+#   mutate(what = str_split(var, "-") %>% map_chr(~.[1]),
 #          strata = str_split(var, "-") %>% map_chr(~.[2]),
 #          strata = factor(strata, levels = stan_data$postrat_names %>% str_split("-") %>% map_chr(~.[2]))) %>%
 #   ggplot(aes(x = strata, y = mean)) +
-#   geom_errorbar(aes(ymin = q5, ymax = q95), width = 0) + 
-#   geom_point() +
+#   geom_errorbar(aes(ymin = q5, ymax = q95, color = set, group = set), width = 0, position = pd) +
+#   geom_point(position = pd, aes(color = set)) +
 #   geom_hline(aes(yintercept = .5), lty = 2, lwd = .5) +
 #   facet_grid(. ~ what, scales = "free", space = "free") +
 #   theme_bw() +
 #   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
 #   labs(y = "probability of positive direction")
 # 
+# p_pos
+
 # ggsave(p_pos, filename = "figures/poststrat_positive_direction.png", width = 12, height = 5) 
