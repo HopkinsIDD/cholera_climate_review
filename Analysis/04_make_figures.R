@@ -235,6 +235,28 @@ library(rgeoboundaries)
 library(sf)
 sf::sf_use_s2(FALSE)
 world <- gb_adm0()  # ADM0 = national boundaries
+
+# fix the regional shapefiles in the location_shapefiles.rds
+# data <- readRDS('Data/shapefiles/location_shapefiles.rds')
+# 
+# lp = "new-45"
+# ctry_list = "AGO|BDI|BEN|BFA|BWA|CAF|CIV|CMR|COD|COG|DJI|ERI|ETH|GAB|GHA|GIN|GMB|GNB|GNQ|KEN|LBR|LSO|MLI|MOZ|MRT|MWI|NAM|NER|NGA|RWA|SEN|SLE|SOM|SWZ|TCD|TGO|TZA|UGA|ZAF|ZMB|ZWE"
+# 
+# country_vec <- str_split(ctry_list, pattern = "\\|", simplify = TRUE) %>% as.vector()
+# tmp <- st_union(world %>% filter(shapeGroup %in% country_vec))
+# plot(tmp)
+# shp <- data %>% filter(lctn_pr == lp)
+# plot(shp$geometry)
+# 
+# data[data$lctn_pr == lp,]$geometry = tmp
+# 
+# plot(data[data$lctn_pr == lp,]$geometry)
+# 
+# #data <- data %>% filter(lctn_pr != lp)
+# 
+# saveRDS(data,"Data/shapefiles/location_shapefiles.rds")
+
+###
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
 shapefiles <- st_transform(shapefiles, crs = st_crs(world))
 
@@ -250,8 +272,9 @@ loc_regional <- plot_data %>%
   distinct(lctn_pr,admin_level) %>% 
   filter(admin_level == 'regional')
 
-blues <- brewer.pal(n = 4, name = "Blues")[-1]  # Remove lightest
-names(blues) <- c("Regional", "National", "Subnational")  # assign manually to match levels
+library(colorspace)
+colors <- colorspace::sequential_hcl(3, palette = "BluYl")
+names(colors) <- c( "Subnational","National", "Regional")
 
 shapefiles_tagged <- bind_rows(
   shapefiles %>% filter(lctn_pr %in% unique(loc_regional$lctn_pr)) %>% mutate(spatial_scale = "Regional"),
@@ -263,24 +286,101 @@ shapefiles_tagged$spatial_scale <- factor(
   shapefiles_tagged$spatial_scale,
   levels = c("Regional", "National", "Subnational")
 )
+# if a region contains both national and subnational level data, show the subnational data.
+bbox <- sf::st_bbox(shapefiles_tagged)
 
 figS1 <- ggplot() +
-  geom_sf(data = world, fill = "grey95", color = "grey70", size = 0.2) +
-  geom_sf(data = shapefiles_tagged, aes(fill = spatial_scale, color = spatial_scale), size = 0.4) +
+  geom_sf(data = world, fill = "grey95", color = "grey70", size = 0.1) +
+  geom_sf(data = shapefiles_tagged, aes(fill = spatial_scale),color = "grey70", size = 0.1) +
   scale_fill_manual(
-    name = "Spatial Scale",
-    values = blues
+    name = "Finest Spatial\nScale Reported",
+    values = colors
   ) +
   scale_color_manual(
-    values = blues,
+    values = colors,
     guide = "none"
   ) +
   theme_bw() +
-  coord_sf(expand = FALSE)
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  )
 
-ggsave('Figures/figS1.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('Figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
+shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
+shapefiles <- st_transform(shapefiles, crs = st_crs(world))
+
+external_sf <- plot_data %>% 
+  distinct(average_hdi, new_climatic_zone, inland_coast, lctn_pr) %>%
+  left_join(
+    shapefiles,
+    by = "lctn_pr"
+  ) %>%
+  mutate(
+    hdi_cat = case_when(
+      average_hdi >= 0     & average_hdi < 0.55 ~ "0–0.55",
+      average_hdi >= 0.55  & average_hdi < 0.7  ~ "0.55–0.7",
+      average_hdi >= 0.7   & average_hdi < 0.8  ~ "0.7–0.8",
+      average_hdi >= 0.8   & average_hdi <= 1   ~ "0.8–1.0",
+      TRUE ~ NA_character_
+    ),
+    hdi_cat = factor(hdi_cat, levels = c("0–0.55", "0.55–0.7", "0.7–0.8", "0.8–1.0"))
+  ) %>% 
+  sf::st_as_sf()
+
+bbox <- sf::st_bbox(external_data)
+
+map_hdi <- ggplot() +
+  geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
+  geom_sf(data = external_sf, aes(fill = hdi_cat), color = "grey60", size = 0.1) +
+  scale_fill_brewer(
+    palette = "Blues",
+    name = "HDI Category",
+    na.value = "white"
+  ) +
+  theme_bw() +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  )
+
+map_climate <- ggplot() +
+  geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
+  geom_sf(data = external_sf, aes(fill = new_climatic_zone), color = "grey60", size = 0.1) +
+  scale_fill_brewer(
+    palette = "YlGnBu",
+    name = "Climatic Zone",
+    na.value = "white"
+  ) +
+  theme_bw() +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  )
+
+map_inland <- ggplot() +
+  geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
+  geom_sf(data = external_sf, aes(fill = inland_coast), color = "grey60", size = 0.1) +
+  scale_fill_manual(
+    values = c("Coastal" = "#6baed6", "Inland" = "#08519c"),
+    name = "Location Type",
+    na.value = "white"
+  ) +
+  theme_bw() +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  )
+figS2 <- map_hdi / map_climate / map_inland +
+  plot_layout(ncol = 1)
+
+ggsave('Figures/figS2.png',plot=figS2,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S3. Histogram of time period duration and median by continent ----
 plot_data_binned <- plot_data %>%
@@ -321,29 +421,41 @@ figS3 <- ggplot() +
 ggsave('Figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
 
 ## Figure S4. Histogram of time period duration and median by country ----
-plot_data_country <- plot_data %>%
+plot_data_country <- plot_data %>% 
+  group_by(studykey,eff_country,continent) %>%
+  summarise(duration_days = mean(duration_days)) %>% # average study duration at the study level
   separate_rows(eff_country, sep = "\\|") %>%
   filter(!is.na(duration_days), duration_days > 0)
 
 duration_medians <- plot_data_country %>%
-  group_by(eff_country) %>%
+  group_by(eff_country) %>% 
   summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
   mutate(line_label = "Median duration")
 
+continent_fills <- c(
+  "Africa" = "#FFA378",
+  "Asia" = "#A8B545",
+  "Other" = "#8C796D"
+)
+
 figS4 <- ggplot(plot_data_country) +
-  geom_histogram(aes(x = duration_days), 
-                 binwidth = 365, position = "stack") +
+  geom_histogram(aes(x = duration_days/365,fill = continent), 
+                 binwidth = 1, position = "stack") +
   geom_vline(data = duration_medians, 
-             aes(xintercept = median_duration, linetype = line_label),
+             aes(xintercept = median_duration/365, linetype = line_label),
              linewidth = 0.4, color = "black") +
   scale_linetype_manual(values = c("Median duration" = "dashed")) +
+  scale_fill_manual(values = continent_fills) +
+  scale_x_continuous(
+    name = "Average Study Duration (years)",
+    breaks = seq(0, max(plot_data$duration_days, na.rm = TRUE)/365, by = 5)
+  ) +
   labs(
-    x = "Study Duration (days)",
     y = "Study Count",
     fill = "Continent",
     color = "Continent",
     linetype = "",
-    title = "Figure S4. Histogram of study duration and median by country"
+    title = ""
   ) +
   theme_bw() +
   theme(
@@ -353,7 +465,7 @@ figS4 <- ggplot(plot_data_country) +
   ) +
   facet_wrap(~eff_country)
 
-ggsave('Figures/figS4.png',plot=figS4,width = 16, height = 8, dpi = 300, bg = "white")
+ggsave('Figures/figS4_new.png',plot=figS4,width = 16, height = 16, dpi = 300, bg = "white")
 
 ## Figure S5. Tile plot by study for each exposure variable ----
 quality_data <- plot_data %>%
@@ -398,6 +510,7 @@ quality_data <- plot_data %>%
          exp_class,
          exp_temp_perfect,
          exp_spatial_perfect,
+         exp_source_perfect,
          out_class_case_presentation_perfect,
          out_temp_perfect,
          out_spatial_perfect,
@@ -408,20 +521,62 @@ quality_data <- plot_data %>%
          a_uncert_def_perfect)
 
 plot_long <- quality_data %>%
-  filter(exp_class=='precipitation') %>% 
-  select(!exp_class) %>% 
   pivot_longer(
-    cols = -studykey,
+    cols = -c(studykey, exp_class),
     names_to = "variable",
     values_to = "is_perfect"
+  ) %>%
+  mutate(
+    # Grouping type for facetting
+    type = case_when(
+      str_starts(variable, "exp_") ~ "Exposure",
+      str_starts(variable, "out_") ~ "Outcome",
+      str_starts(variable, "a_") ~ "Analysis"
+    ),
+    
+    # Descriptive label without prefixes
+    variable_label = recode(variable,
+                            "exp_temp_perfect" = "Temperature scale (exposure)",
+                            "exp_spatial_perfect" = "Spatial scale (exposure)",
+                            "exp_source_perfect" = "Exposure source",
+                            "out_class_case_presentation_perfect" = "Case classification",
+                            "out_temp_perfect" = "Temperature scale (outcome)",
+                            "out_spatial_perfect" = "Spatial scale (outcome)",
+                            "out_case_df_perfect" = "Case definition",
+                            "a_match_perfect" = "Exposure-outcome match",
+                            "a_class_perfect" = "Effect classification",
+                            "a_adjusted_perfect" = "Adjustment",
+                            "a_uncert_def_perfect" = "Uncertainty definition"
+    )
+  ) %>%
+  mutate(
+    exp_class = factor(exp_class,levels = c("precipitation","temperature","flood","drought")),
+    type = factor(type, levels = c("Exposure","Outcome","Analysis")),
+    studykey = fct_rev(factor(studykey, levels = sort(unique(studykey))))
+  ) %>% 
+  mutate(
+    variable_label = factor(variable_label),
+    studykey = factor(studykey, levels = sort(unique(studykey)))
   )
 
-ggplot(plot_long, aes(x = variable, y = studykey, fill = factor(is_perfect))) +
+figS5 <- ggplot(plot_long, aes(x = variable_label, y = studykey, fill = factor(is_perfect))) +
   geom_tile(color = "white") +
-  scale_fill_manual(values = c("0" = "lightgray", "1" = "steelblue"), name = "Perfect Score") +
+  scale_fill_manual(
+    values = c("0" = "#1f78b4", "1" = "#ffdf00"),  # Blue (0), Yellow (1)
+    name = "Reporting status"
+  ) +
   labs(x = "Quality Dimension", y = "Study") +
+  facet_grid(exp_class ~ type, scales = "free", space = "free") +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.background = element_rect(fill = "grey90"),
+    strip.text = element_text(face = "bold")
+  )
+
+ 
+ggsave('Figures/figS5_new.png',plot=figS5,width = 12, height = 16, dpi = 300, bg = "white")
+
 
 ## Stratification by continent ----
 
