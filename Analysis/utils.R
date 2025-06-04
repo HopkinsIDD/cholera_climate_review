@@ -10,6 +10,8 @@
 #' @param country_col 
 #'
 add_continent <- function(df, country_col) {
+  library(stringr)
+  
   # Define countries
   asia_countries <- c("BGD","CHN","IND","IRN","MYS","PAK","VNM")
   other_countries <- c("YEM","HTI","PER")
@@ -798,6 +800,7 @@ plot_spatial_distribution_map <- function(plot_data,
   library(rgeoboundaries)
   library(sf)
   library(tidyverse)
+  library(tidyr)
   
   # Compute the count of studies per country
   if (!is.null(group_col)) {
