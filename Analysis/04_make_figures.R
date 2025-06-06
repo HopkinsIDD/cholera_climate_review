@@ -314,7 +314,7 @@ shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
 shapefiles <- st_transform(shapefiles, crs = st_crs(world))
 
 external_sf <- plot_data %>% 
-  distinct(average_hdi, new_climatic_zone, inland_coast, lctn_pr) %>%
+  distinct(average_hdi, new_climatic_zone, inland_coast, mean_percent_year_with_cases,lctn_pr) %>%
   left_join(
     shapefiles,
     by = "lctn_pr"
@@ -329,9 +329,16 @@ external_sf <- plot_data %>%
     ),
     hdi_cat = factor(hdi_cat, levels = c("0–0.55", "0.55–0.7", "0.7–0.8", "0.8–1.0"))
   ) %>% 
+  mutate(endemicity_group = case_when(
+    mean_percent_year_with_cases <= 50 ~ "0-50%",
+    mean_percent_year_with_cases > 50 & mean_percent_year_with_cases <= 95 ~ "50-95%",
+    mean_percent_year_with_cases > 95 ~ ">95%",
+  ),
+  endemicity_group = factor(endemicity_group, levels = c("0-50%","50-95%",">95%"))
+  ) %>% 
   sf::st_as_sf()
 
-bbox <- sf::st_bbox(external_data)
+bbox <- sf::st_bbox(external_sf)
 
 map_hdi <- ggplot() +
   geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
@@ -368,7 +375,7 @@ map_inland <- ggplot() +
   geom_sf(data = external_sf, aes(fill = inland_coast), color = "grey60", size = 0.1) +
   scale_fill_manual(
     values = c("Coastal" = "#6baed6", "Inland" = "#08519c"),
-    name = "Location Type",
+    name = "Proximity to ocean",
     na.value = "white"
   ) +
   theme_bw() +
@@ -377,10 +384,26 @@ map_inland <- ggplot() +
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
   )
-figS2 <- map_hdi / map_climate / map_inland +
+
+map_endemicity <- ggplot() +
+  geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
+  geom_sf(data = external_sf, aes(fill = endemicity_group), color = "grey60", size = 0.1) +
+  scale_fill_brewer(
+    palette = "YlGnBu",
+    name = "% of years with\nWHO reported cases\nbewteen 2000-2023",
+    na.value = "white"
+  ) +
+  theme_bw() +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  )
+
+figS2 <- map_hdi / map_climate / map_inland / map_endemicity +
   plot_layout(ncol = 1)
 
-ggsave('Figures/figS2.png',plot=figS2,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('Figures/figS2_new.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
 
 ## Figure S3. Histogram of time period duration and median by continent ----
 plot_data_binned <- plot_data %>%
