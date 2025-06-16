@@ -322,3 +322,77 @@ identify_endemicity <- function(
   
   return(processed_data)
 }
+
+## proportion of years with reported WHO cases between 2000-2023 ----
+library(tidyverse)
+library(purrr)
+source(here::here("Analysis/utils.R"))
+library(gtsummary)
+library(lubridate)
+library(gt)
+library(survey)
+library(dplyr)
+
+# Load the dataset from the file path
+data <- readr::read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
+  mutate(
+    admin_level = case_when(
+      new_admin == "supranational" ~ "regional",
+      TRUE ~ new_admin
+    )
+  ) %>% 
+  add_continent("eff_country") %>% 
+  mutate(
+    exp_class =factor(exp_class, levels = c("precipitation","temperature","flood","drought"))
+  ) %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+  mutate(study_year_tl = lubridate::year(eff_tl),
+         study_year_tr = lubridate::year(eff_tr)) 
+
+who_data<-read.csv("Data/endemicity/who_annual_report.csv") %>%
+  tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id','primary'),sep = ';',remove=T) %>%
+  filter(primary == 't') %>% 
+  merge(.,read.csv("Data/endemicity/country_location_id_name.csv"),by.x="location_id",by.y="id",all.x=TRUE) %>%
+  filter(is.na(region)==F) %>%
+  arrange(region) %>%
+  mutate(country = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
+  filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2023-12-31")) %>% 
+  mutate(year = lubridate::year(time_right)) %>% 
+  select(country,suspected_cases,year)
+
+endemicity_data <- identify_endemicity(
+  processed_data = data,
+  who_data = who_data,
+  group_col = 'exp_class'
+) %>%
+  mutate(endemicity_group = case_when(
+    percent_year_with_cases <= 50 ~ "0-50%",
+    percent_year_with_cases > 50 & percent_year_with_cases <= 95 ~ "50-95%",
+    percent_year_with_cases > 95 ~ ">95%"
+  ))
+
+data_now <- readr::read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv")
+
+data_expanded <- data_now %>% 
+  mutate(row_id = row_number()) %>% 
+  separate_rows(eff_country, sep = "\\|") %>%
+  rename(country = eff_country)
+
+data_joined <- data_expanded %>%
+  left_join(endemicity_data %>%
+              select(country, exp_class, percent_year_with_cases),
+            by = c("country", "exp_class"))
+
+data_summarized <- data_joined %>%
+  group_by(row_id) %>%  # temporary row ID to collapse back
+  summarise(
+    eff_country = str_c(unique(country), collapse = "|"),
+    exp_class = first(exp_class),
+    mean_percent_year_with_cases = mean(percent_year_with_cases, na.rm = TRUE)
+  )
+
+data_final <- data_now %>%
+  mutate(row_id = row_number()) %>%
+  left_join(data_summarized %>% select(row_id,mean_percent_year_with_cases), by = "row_id") %>%
+  select(-row_id)
+#write.csv(data_final,"Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names = F)
