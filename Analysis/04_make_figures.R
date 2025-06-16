@@ -12,20 +12,64 @@ library(cowplot)
 library(grid)
 library(dplyr)
 library(RColorBrewer)
+library(here)
 
 source("Analysis/utils.R")
 
+
+# Load data ---------------------------------------------------------------
+
+# Estimate data
+est_data <- readRDS(here("generated_data/processed_estimate_data.rds"))
+
+# Study quality scores. For now taking the min score for a given study, 
+# but may need to update
+scores <- readRDS(here("generated_data/paper_scores.rds")) %>% 
+  group_by(studykey) %>% 
+  slice_min(tot_score, with_ties = F) %>%
+  ungroup() %>% 
+  distinct(studykey, tot_score) %>% 
+  mutate(score_cat = cut(tot_score, c(0, 6, 11, Inf), include.lower = T, right = F),
+         score_cat = factor(score_cat, labels = c("low", "medium", "high")) %>% 
+           forcats::fct_relevel(rev(c("low", "medium", "high"))))
+
+
+# Compute statistics for direction of effect plot
+dir_data <- est_data %>% 
+  mutate(out_class_case_presentation = case_when(
+    out_class_case_presentation == "not stated" ~ "unknown",
+    !str_detect(out_class_case_presentation, "confirmed") ~ "suspected",
+    !str_detect(out_class_case_presentation, "suspected") ~ "confirmed",
+    TRUE ~ "mixed"
+  )) %>% 
+  group_by(studykey, out_class_metric, exp_class, continent, admin_level) %>%
+  # Define single case definition for study
+  mutate(out_class_case_presentation = case_when(any(out_class_case_presentation == "unknown") ~ "unknown",
+                                                 any(out_class_case_presentation == "unknown") ~ "mixed",
+                                                 all(out_class_case_presentation == "suspected") ~ "suspected",
+                                                 all(out_class_case_presentation == "confirmed") ~ "confirmed",
+                                                 TRUE ~ "mixed")) %>% 
+  group_by(studykey, out_class_case_presentation, out_class_metric, exp_class, continent, admin_level) %>%
+  summarise_directions() %>% 
+  ungroup()  %>% 
+  mutate(studykey = str_replace(studykey, "\xe6", "e"),
+         dir_icon = case_when(overall_dir == "higher" ~ "caret-up",
+                              overall_dir == "lower" ~ "caret-down",
+                              TRUE ~ "caret-left,caret-right"),
+         overall_dir = factor(overall_dir, labels = c("Positive", "Negative", "Conflicting")), 
+         pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) 
+
 # Load results ------------------------------------------------------------
 
-res_files <- dir("generated_data/", pattern = "stan_fit", full.names = T) %>% 
-  # Get new runs with full set of covariates
-  str_subset("strat") %>% 
-  str_subset("dir")
-
-# Get effect sizes
-es_effect_dir <- get_effect_sizes(res_files) %>% 
-  mutate(covar_type = if_else(str_detect(what, "resolution|lag|admin"), "analysis", "setting"))
-
+# res_files <- dir("generated_data/", pattern = "stan_fit", full.names = T) %>% 
+#   # Get new runs with full set of covariates
+#   str_subset("strat") %>% 
+#   str_subset("dir")
+# 
+# # Get effect sizes
+# es_effect_dir <- get_effect_sizes(res_files) %>% 
+#   mutate(covar_type = if_else(str_detect(what, "resolution|lag|admin"), "analysis", "setting"))
+# 
 
 # Fig 2. Spatial-temporal coverage of studies -----------------------------
 
@@ -203,6 +247,13 @@ fig2_combined <- plot_grid(
 
 ggsave("Figures/fig2.png", fig2_combined,
        width = 18, height = 10, dpi = 300, bg = "white")
+
+
+# Figure 3 ----------------------------------------------------------------
+
+# Make overall plot
+compose_effdir_plot(data = dir_data,
+                    filename = "figures/figure_3.png")
 
 # Figure 4 ------------------------------------------------------------
 
@@ -394,6 +445,13 @@ supfig_strat_climate <- es_effect_dir %>%
 
 ggsave(supfig_strat_climate, filename = "figures/supfig_effect_sizes_climate.png",
        width = 12, height = 8, dpi = 300)
+
+## Effect direction stratification ----
+
+walk(c("Asia", "Africa", "Other"), function(x) {
+  compose_effdir_plot(data = dir_data %>% filter(continent == x),
+                      filename = str_glue("figures/supfig_eff_dir_plot_{x}.png"))
+})
 
 
 # Exploratory figures ----

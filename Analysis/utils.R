@@ -628,6 +628,30 @@ add_doe_styling2 <- function(gtx) {
       missing_text = "-"
     )
 }
+
+# Attempt at combining two exposures
+make_dir_data2 <- function(df, 
+                           exposure, 
+                           covars = c("continent", "admin_level", "out_class_case_presentation")) {
+  df %>% 
+    mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
+    inner_join(scores) %>% 
+    arrange(dir_icon_lvls, score_cat, pubyear) %>% 
+    group_by(dir_icon) %>% 
+    mutate(bottom_line = row_number() == n()) %>% 
+    select(studykey, pubyear, exp_class, out_class_metric, all_of(covars), dir_icon, overall_dir, score_cat, bottom_line) %>% 
+    filter(exp_class == exposure) %>% 
+    mutate(out_class_metric = factor(out_class_metric, levels = c("incidence", "occurrence"))) %>% 
+    pivot_wider(names_from = "out_class_metric",
+                values_from = "dir_icon",
+                names_expand = TRUE) %>% 
+    select(studykey, pubyear, all_of(covars), overall_dir, score_cat, bottom_line, 
+           incidence, occurrence) %>% 
+    mutate(overall_dir = overall_dir %>% forcats::fct_relevel("Positive", "Conflicting", "Negative")) %>% 
+    arrange(overall_dir, score_cat, desc(incidence), desc(occurrence), pubyear) %>% 
+    select(-pubyear)
+}
+
 # Plots -------------------------------------------------------------------
 
 
@@ -856,6 +880,71 @@ plot_spatial_distribution_map <- function(plot_data,
     ggtitle("Spatial Distribution of Studies by Country")
 }
 
+
+
+
+make_gt_dirplot <- function(data, exposure) {
+  # Make direction data for this exposure
+  this_dir_dat <- make_dir_data2(df = data, exposure = exposure)
+  
+  # Build gt table
+  gt_table <- this_dir_dat %>%
+    gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+    fmt_icon(c("incidence", "occurrence")) %>% 
+    add_doe_styling2() %>% 
+    tab_header(title = str_to_title(exposure))
+  
+  gt_table
+}
+
+save_gt_dirplot <- function(data, exposure) {
+  gt_table <- make_gt_dirplot(data = data, exposure = exposure)
+  gtsave(
+    gt_table, 
+    filename = str_glue("figures/dirplot_{exposure}.png"), 
+    zoom = 4, 
+    vwidth = 1200,
+    vheight = 1800
+  )
+}
+
+compose_effdir_plot <- function(data,
+                                filename = "figures/eff_dir_plot_exposures_by_outcome.png") {
+  # Save tables for all exposures
+  walk(
+    get_all_exp_class(), 
+    ~ save_gt_dirplot(data = data, exposure = .)
+  )
+  
+  # Read images and compose
+  plots <- map(
+    get_all_exp_class(),
+    function(x) {
+      image_read(str_glue("figures/dirplot_{x}.png")) %>% 
+        image_ggplot() + 
+        theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+    }
+  ) %>% 
+    set_names(get_all_exp_class())
+  
+  # Compose
+  p_exposures <- (plots[["precipitation"]] + plots[["temperature"]] + plots[["flood"]] + plots[["drought"]]) + 
+    plot_layout(
+      design = "
+    AB
+    AB
+    AC
+    AD
+    ")
+  
+  ggsave(
+    p_exposures, 
+    filename = filename,
+    width = 12,
+    height = 18,
+    dpi = 600
+  )
+}
 
 # Misc --------------------------------------------------------------------
 
