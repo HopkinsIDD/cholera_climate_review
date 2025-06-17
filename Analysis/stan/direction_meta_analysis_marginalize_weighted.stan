@@ -58,16 +58,13 @@ parameters {
   vector[J] beta;
   vector[K] eta_raw;
   real<lower=0> sigma_re;
+  vector[N] epsilon_raw;
+  real<lower=0> sigma_epsilon;
 }
 
 transformed parameters {
   vector[N_full] mu_full;
   vector[N_missing] ll_missing;
-  
-  if (N_full > 0) {
-    // mean values for observations with all covariates
-    mu_full = X[ind_full, ] * beta + eta_raw[map_to_study[ind_full]] * sigma_re;
-  }
   
   if (N_missing > 0) {
     
@@ -76,10 +73,10 @@ transformed parameters {
       int k = ind_missing[i];
       vector[l] ll_tmp;
       int counter = 1;
-      real alpha_tmp  = eta_raw[map_to_study[k]] * sigma_re;
+      real alpha_tmp  = eta_raw[map_to_study[k]] * sigma_re + epsilon_raw[k] * sigma_epsilon;
       
       for (j in missing_covar_starts[i]:missing_covar_ends[i]) {
-        ll_tmp[counter] =  bernoulli_logit_glm_lpmf(y[k]|  to_matrix(X_missing[j, ]), alpha_tmp, beta) + log(p_missing_covar[j]);
+        ll_tmp[counter] = bernoulli_logit_glm_lpmf(y[k]|  to_matrix(X_missing[j, ]), alpha_tmp, beta) + log(p_missing_covar[j]);
         counter += 1;
       }
       ll_missing[i] = log_sum_exp(ll_tmp);
@@ -90,20 +87,23 @@ transformed parameters {
 }
 model {
   vector[N_full] alpha_full;
-  alpha_full = eta_raw[map_to_study[ind_full]] * sigma_re;
+  alpha_full = eta_raw[map_to_study[ind_full]] * sigma_re + epsilon_raw[ind_full] * sigma_epsilon;
   target += bernoulli_logit_glm_lpmf(y[ind_full]| X[ind_full, ], alpha_full, beta);
   target += sum(ll_missing);
   
   beta ~ normal(0, .5);
   eta_raw ~ std_normal();
+  epsilon_raw ~ std_normal();
   sigma_re ~ normal(0, 1);
+  sigma_epsilon ~ normal(0, 1);
 }
 
 generated quantities {
   vector[U_poststrat] poststrat;    // postsratified mean
-  vector[U_poststrat] poststrat_pred_mean;    // expectation of postsratified prediction interval mean 
-  vector[U_poststrat] poststrat_pred;    // postsratified prediction interval mean 
+  // vector[U_poststrat] poststrat_pred_mean;    // expectation of postsratified prediction interval mean 
+  vector[U_poststrat] poststrat_pred;    // postsratified prediction interval mean
   vector[J] eff_size = exp(beta);
+  real i_squared = sigma_re^2 / (sigma_re^2 + sigma_epsilon^2);
   
   {
     vector[U_covar] eta;          // logit-linear perdictor 
@@ -112,17 +112,17 @@ generated quantities {
     eta = u_covar_mat * beta;
     poststrat = poststrat_mat_comb * inv_logit(eta);
     
-    for (i in 1:U_covar) {
-      array[0] real x_r;
-      array[0] int x_i;
-      array[2] real par;
-      par[1] = eta[i];
-      par[2] = sigma_re;
-      eta_re[i] = integrate_1d(to_integrate, 0, 1, par, x_r, x_i, 1e-8);
-    }
-    
-    poststrat_pred = poststrat_mat_comb * inv_logit(eta + normal_rng(0, sigma_re));
-    poststrat_pred_mean = poststrat_mat_comb * eta_re;
+    // for (i in 1:U_covar) {
+      //   array[0] real x_r;
+      //   array[0] int x_i;
+      //   array[2] real par;
+      //   par[1] = eta[i];
+      //   par[2] = sigma_re;
+      //   eta_re[i] = integrate_1d(to_integrate, 0, 1, par, x_r, x_i, 1e-8);
+      // }
+      
+      poststrat_pred = poststrat_mat_comb * inv_logit(eta + normal_rng(0, sigma_re));
+      // poststrat_pred_mean = poststrat_mat_comb * eta_re;
   }
 }
 
