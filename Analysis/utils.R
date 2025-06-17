@@ -175,7 +175,7 @@ get_estimate_thresholds <- function() {
 }
 
 get_all_covar_patterns <- function() {
-  "continent|admin_level|full_score|lag_class|out_temp_scale|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
+  "pct_years_cholera_cat|continent|admin_level|full_score|lag_class|out_temp_scale|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
 }
 
 get_all_effects <- function() {
@@ -669,7 +669,19 @@ colors_continent <- function() {
   colors
 }
 
-
+#' get_stratification_colors
+#' Colors for stratified plots of effect sizes
+#' @return
+#'
+get_stratification_colors <- function(stratification) {
+  if (stratification == "new_climatic_zone") {
+    c("#C77100", "#009E15", "#0006B3")
+  } else if (stratification == "continent") {
+    colors_continent()
+  } else if (stratification == "pct_years_cholera_cat") {
+    c("#752D00", "#E85D00", "#C29500")
+  }
+}
 
 make_facet_formula <- function(x_var) {
   as.formula(str_glue("exp_class ~ {x_var}_def")) 
@@ -1034,6 +1046,21 @@ make_stan_fit_filename <- function(outdir = here("generated_data/"),
                 type = "rds")
 }
 
+#' make_stan_genquant_filename
+#' filename for stan genquant
+#' 
+#' @param outdir 
+#' @param opt 
+#'
+make_stan_genquant_filename <- function(outdir = here("generated_data/"),
+                                        opt) {
+  
+  make_filename(basename = "stan_genquant",
+                outdir = outdir,
+                opt = opt,
+                parse_opt = parse_stan_opt,
+                type = "rds")
+}
 
 # Post-stratification -----------------------------------------------------
 
@@ -1162,17 +1189,17 @@ get_run_info <- function(x) {
     stratification = parse_info(x, get_all_covar_patterns()),
     level = str_extract(x, str_glue("(?<={stratification}-)(.)*(?=\\.)"))
   ) %>% 
-    replace_na(list(stratification = "none",
-                    level = "all"))
+    replace_na(list(stratification = "none", level = "all"))
   
 }
+
 
 get_effect_sizes <- function(res_files) {
   map_df(res_files, function(x) {
     
     # Read stan fit and data
     stan_fit <- readRDS(x)
-    stan_data <- readRDS(str_replace(x, "stan_fit", "stan_data"))
+    stan_data <- readRDS(str_replace(x, "stan_genquant", "stan_data"))
     
     # Information on run (exposure, outcome, stratification)
     run_info <- get_run_info(x)
@@ -1180,11 +1207,19 @@ get_effect_sizes <- function(res_files) {
     # Parse strata levels
     strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
     
+    # Custom change to mixed category for rainy season
+    ind_mixed <- which(strata_levels == "mixed")
+    if (strata_levels[ind_mixed[1]-1] == "out of season") {
+      strata_levels[ind_mixed[1]] <- "both"
+    }
+    
     # Get draw summaries and add info
     stan_fit$summary("eff_size") %>%
       mutate(var = colnames(stan_data$X),
              what = str_extract(var, get_all_covar_patterns()),
              strata = str_remove(var, what),
+             # Custom fix for dupplicated pattern
+             strata = if_else(what == "rainy_season" & strata == "mixed", "both", strata),
              strata = factor(strata, levels = strata_levels)) %>%
       filter(!is.na(what)) %>% 
       mutate(what = map_chr(what, function(w) {
@@ -1197,16 +1232,30 @@ get_effect_sizes <- function(res_files) {
   }) 
 }
 
+# get_ref_cat_dict <- function() {
+#   c(
+#     "1 week" = "1 week",
+#     "0-14 days" = "0-14 days",
+#     "[0,50)" = "< 50% of years",
+#     "Arid" = "arid",
+#     "Africa" = "Africa",
+#     "Coast" = "coast",
+#     "high hdi" = "high",
+#     "out_of_rainy_season" = "out"
+#     )
+# }
+
 get_covar_dict <- function() {
   c(
-    "lag_class" = "temporal lag",
+    "lag_class" = "temporal lag\nof exposure-outcome",
     "out_temp_scale" = "temporal resolution\nof outcome",
     "continent" = "continent",
     "hdi_cat" = "HDI",
-    "inland_coast" = "Distance\nto coast",
+    "inland_coast" = "coastal",
     "new_climatic_zone" = "climatic zone",
     "rainy_season" = "seasonal\ntiming",
-    "urban_rural_class" = "urbanicity"
+    "urban_rural_class" = "urbanicity",
+    "pct_years_cholera_cat" = "cholera\nfrequency"
   )
 }
 

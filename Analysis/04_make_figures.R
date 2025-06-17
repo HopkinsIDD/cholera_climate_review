@@ -59,19 +59,8 @@ dir_data <- est_data %>%
          overall_dir = factor(overall_dir, labels = c("Positive", "Negative", "Conflicting")), 
          pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) 
 
-# Load results ------------------------------------------------------------
 
-# res_files <- dir("generated_data/", pattern = "stan_fit", full.names = T) %>% 
-#   # Get new runs with full set of covariates
-#   str_subset("strat") %>% 
-#   str_subset("dir")
-# 
-# # Get effect sizes
-# es_effect_dir <- get_effect_sizes(res_files) %>% 
-#   mutate(covar_type = if_else(str_detect(what, "resolution|lag|admin"), "analysis", "setting"))
-# 
-
-# Fig 2. Spatial-temporal coverage of studies -----------------------------
+# Figure 2: Spatial-temporal coverage of studies --------------------------
 
 ## Fig 2a Spatial coverage map ----
 plot_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
@@ -101,7 +90,7 @@ plot_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_
 #select * from observations where 1=2;
 #\copy (select time_left,time_right,suspected_cases,deaths,location_id, "primary" from observations where (observation_collection_id <=480) and (observation_collection_id>=300) ) to 'who_annual_report.csv' (format csv, delimiter ';');
 
-who_data<-read.csv("Data/endemicity/who_annual_report.csv") %>%
+who_data <- read.csv("Data/endemicity/who_annual_report.csv") %>%
   tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id','primary'),sep = ';',remove=T) %>%
   filter(primary == 't') %>% 
   merge(.,read.csv("Data/endemicity/country_location_id_name.csv"),by.x="location_id",by.y="id",all.x=TRUE) %>%
@@ -114,17 +103,17 @@ who_data<-read.csv("Data/endemicity/who_annual_report.csv") %>%
 
 
 fig2a <- plot_spatial_distribution_map(plot_data = plot_data,
-                                       country_col="eff_country",
+                                       country_col = "eff_country",
                                        who_data = who_data,
                                        group_col = "admin_level",
                                        group_levels = c("regional","national","sub-national"))
 
 ## Fig 2b Temporal ----
-continent_colors <- c(
-  "Africa" = "#FFA378",
-  "Asia" = "#A8B545",
-  "Other" = "#8C796D"
-)
+# continent_colors <- c(
+#   "Africa" = "#FFA378",
+#   "Asia" = "#A8B545",
+#   "Other" = "#8C796D"
+# )
 
 # Make the plot
 timeline_plot <- ggplot(plot_data %>% arrange(year_tl)) +
@@ -133,7 +122,7 @@ timeline_plot <- ggplot(plot_data %>% arrange(year_tl)) +
                    yend = reorder(studykey, year_tl),
                    color = continent),
                linewidth = 0.8) +
-  scale_color_manual(values = continent_colors) +
+  scale_color_manual(values = colors_continent()) +
   scale_x_date(date_breaks = "5 year", date_labels = "%Y") +
   labs(x = "Year", y = "Study", color = "Continent") +
   theme_bw() +
@@ -176,9 +165,9 @@ hist_top <- ggplot(
   geom_histogram(binwidth = 365, position = "stack") +
   # Your continent colors
   scale_fill_manual(
-    values = c(continent_colors, setNames(decade_df$fill_color, decade_df$decade))
+    values = c(colors_continent(), setNames(decade_df$fill_color, decade_df$decade))
   ) +
-  scale_color_manual(values = continent_colors) +
+  scale_color_manual(values = colors_continent()) +
   scale_x_date(
     breaks = custom_breaks,
     labels = custom_labels,
@@ -249,20 +238,92 @@ ggsave("Figures/fig2.png", fig2_combined,
        width = 18, height = 10, dpi = 300, bg = "white")
 
 
-# Figure 3 ----------------------------------------------------------------
+## Second pass figure 2 ----
+timeline_plot2 <- timeline_plot + 
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1)) +
+  scale_x_date(breaks = seq.Date("1970-01-02", "2020-01-02", by = "5 years"), 
+               date_labels = "%Y", limits = as.Date(c("1965-01-01", "2020-12-31"))) +
+  theme(panel.grid.minor = element_blank())
+
+
+hist_top2 <- ggplot(
+  plot_data %>%
+    distinct(studykey, year_tl, year_tr, continent) %>%
+    mutate(start_year = lubridate::year(year_tl),
+           end_year = lubridate::year(year_tr)) %>%
+    mutate(start_year = ifelse(start_year < 1961, 1961, start_year)) %>%
+    mutate(end_year = ifelse(start_year <= 1961, 1961, end_year)) %>%
+    uncount(end_year - start_year + 1, .id = "year") %>%
+    mutate(year = start_year + as.numeric(year) - 1), 
+  aes(x = as.Date(paste0(year, "-01-01")), fill = continent, color = continent)
+) +
+  # Main histogram
+  geom_histogram(binwidth = 365, position = "stack") +
+  # Your continent colors
+  scale_fill_manual(
+    values = c(continent_colors, setNames(decade_df$fill_color, decade_df$decade))
+  ) +
+  scale_color_manual(values = continent_colors) +
+  labs(x = NULL, y = "Study count", fill = "Continent", color = "Continent") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.x.top = element_text(angle = 0, vjust = 0.5),
+    axis.ticks.x = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0)
+  ) +
+  scale_x_date(breaks = seq.Date("1970-01-02", "2020-01-02", by = "5 years"), 
+               date_labels = "%Y", limits = as.Date(c("1965-01-01", "2020-12-31"))) +
+  theme(panel.grid.minor = element_blank()) + 
+  coord_flip()
+
+p_fig2_lower <- cowplot::plot_grid(
+  timeline_plot2 +
+    theme(legend.position = c(.7, .2)),
+  hist_top2 +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank()) +
+    guides(color = "none"),
+  nrow = 1,
+  align = "h",
+  axis = "tb",
+  rel_widths = c(1, .3)
+)
+
+p_fig2_lower
+
+
+
+# Figure 3: direction of effect -------------------------------------------
 
 # Make overall plot
 compose_effdir_plot(data = dir_data,
                     filename = "figures/figure_3.png")
 
-# Figure 4 ------------------------------------------------------------
 
-pd <- position_dodge(width = .3)
+# Figure 4: meta-regression -----------------------------------------------
+
+# Load results
+res_files <- dir("generated_data/", pattern = "stan_genquant", full.names = T) %>%
+  # Get new runs with full set of covariates
+  str_subset("strat") %>%
+  str_subset("direction")
+
+# Get effect sizes
+es_effect_dir <- get_effect_sizes(res_files) %>%
+  mutate(covar_type = if_else(str_detect(what, "resolution|lag|admin"), 
+                              "analytical approach", "contextual factors") %>% 
+           factor(levels = c("contextual factors", "analytical approach")))
+
+
+pd <- position_dodge(width = .5)
 
 fig4 <- es_effect_dir %>% 
   filter(stratification == "none") %>% 
   ggplot(aes(x = strata, y = mean)) +
-  geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
+  geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
   geom_point(aes(color = exp_class, pch = out_class), position = pd) +
   geom_errorbar(aes(ymin = q5, ymax = q95, color = exp_class, lty = out_class), 
                 position = pd, width = 0) +
@@ -271,12 +332,19 @@ fig4 <- es_effect_dir %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
   ggthemes::scale_color_few("Dark") +
   scale_linetype_manual(values = c(1, 6)) +
-  labs(y = "effect size")
+  labs(
+    x = "covariate levels",
+    y = "odds ratio of positive direction of association", 
+    shape = "Outcome type",
+    lty = "Outcome type",
+    color = "Exposure variable"
+  ) +
+  theme(
+    strip.text.x = element_text(size = 6)
+  )
 
 ggsave(fig4, filename = "figures/figure_4.png",
-       width = 12, height = 6, dpi = 300)
-
-
+       width = 12.5, height = 7, dpi = 300)
 
 # Supplement figures ------------------------------------------------------
 
@@ -648,47 +716,39 @@ figS5 <- ggplot(plot_long, aes(x = variable_label, y = studykey, fill = factor(i
     strip.text = element_text(face = "bold")
   )
 
- 
+
 ggsave('Figures/figS5_new.png',plot=figS5,width = 12, height = 16, dpi = 300, bg = "white")
 
+## Figure S6-S8: effect size stratification by continent, climate and endemicity ----
 
-## Stratification by continent ----
-
-supfig_strat_continent <- es_effect_dir %>% 
-  filter(stratification == "continent") %>% 
-  ggplot(aes(x = strata, y = mean)) +
-  geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
-  geom_point(aes(color = level, pch = out_class), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
-                position = pd, width = 0) +
-  ggh4x::facet_nested(exp_class + out_class ~ covar_type + what, scales = "free_x", space = "free_x") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
-  scale_color_manual(values = colors_continent()) +
-  scale_linetype_manual(values = c(1, 6)) +
-  labs(y = "effect size")
-
-ggsave(supfig_strat_continent, filename = "figures/supfig_effect_sizes_continent.png",
-       width = 12, height = 8, dpi = 300)
-
-## Stratification by climate zone ----
-
-supfig_strat_climate <- es_effect_dir %>% 
-  filter(stratification == "new_climatic_zone") %>% 
-  ggplot(aes(x = strata, y = mean)) +
-  geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
-  geom_point(aes(color = level, pch = out_class), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
-                position = pd, width = 0) +
-  ggh4x::facet_nested(exp_class + out_class ~ covar_type + what, scales = "free_x", space = "free_x") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
-  ggthemes::scale_color_few("Dark") +
-  scale_linetype_manual(values = c(1, 6)) +
-  labs(y = "effect size")
-
-ggsave(supfig_strat_climate, filename = "figures/supfig_effect_sizes_climate.png",
-       width = 12, height = 8, dpi = 300)
+walk(
+  c("new_climatic_zone", "continent", "pct_years_cholera_cat"),
+  function(x) {
+    pd <- position_dodge(width = .4)
+    
+    p_strat <- es_effect_dir %>% 
+      filter(stratification == x) %>% 
+      ggplot(aes(x = strata, y = mean)) +
+      geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
+      geom_point(aes(color = level, pch = out_class), position = pd) +
+      geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
+                    position = pd, width = 0, alpha = .8) +
+      ggh4x::facet_nested(out_class + exp_class ~ covar_type + what, scales = "free_x", space = "free_x") +
+      theme_bw() +
+      scale_linetype_manual(values = c(1, 6)) +
+      scale_color_manual(values = get_stratification_colors(stratification = x)) +
+      labs(y = "odds ratio", color = get_covar_dict()[x]) +
+      guides(lty = "none", shape = "none") +
+      scale_y_continuous(limits = c(0, 4))+
+      theme(
+        strip.text.x = element_text(size = 6),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+      )
+    
+    ggsave(p_strat, filename = str_glue("figures/supfig_effect_sizes_stratified_{x}.png"),
+           width = 12.5, height = 8)
+    
+  })
 
 ## Effect direction stratification ----
 
@@ -715,3 +775,45 @@ ggplot(summary, aes(x = percent_year_with_cases)) +
     y = "Number of Countries"
   ) +
   theme_bw()
+
+
+# Scraps ------------------------------------------------------------------
+
+
+#  Stratification by continent 
+# 
+# supfig_strat_continent <- es_effect_dir %>% 
+#   filter(stratification == "continent") %>% 
+#   ggplot(aes(x = strata, y = mean)) +
+#   geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
+#   geom_point(aes(color = level, pch = out_class), position = pd) +
+#   geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
+#                 position = pd, width = 0) +
+#   ggh4x::facet_nested(exp_class + out_class ~ covar_type + what, scales = "free_x", space = "free_x") +
+#   theme_bw() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+#   scale_color_manual(values = colors_continent()) +
+#   scale_linetype_manual(values = c(1, 6)) +
+#   labs(y = "effect size")
+# 
+# ggsave(supfig_strat_continent, filename = "figures/supfig_effect_sizes_continent.png",
+#        width = 12, height = 8, dpi = 300)
+# 
+#  Stratification by climate zone
+# 
+# supfig_strat_climate <- es_effect_dir %>% 
+#   filter(stratification == "new_climatic_zone") %>% 
+#   ggplot(aes(x = strata, y = mean)) +
+#   geom_hline(aes(yintercept = 0), lwd = .3, lty = 2) +
+#   geom_point(aes(color = level, pch = out_class), position = pd) +
+#   geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
+#                 position = pd, width = 0) +
+#   ggh4x::facet_nested(exp_class + out_class ~ covar_type + what, scales = "free_x", space = "free_x") +
+#   theme_bw() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+#   ggthemes::scale_color_few("Dark") +
+#   scale_linetype_manual(values = c(1, 6)) +
+#   labs(y = "effect size")
+# 
+# ggsave(supfig_strat_climate, filename = "figures/supfig_effect_sizes_climate.png",
+#        width = 12, height = 8, dpi = 300)
