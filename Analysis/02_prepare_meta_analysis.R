@@ -17,13 +17,19 @@ option_list <- list(
   make_option(c("-o", "--out_class"), 
               default = "incidence", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-l", "--level"), 
-              default = "Asia", action ="store", type = "character", help = "Stratification level"),
+              default = "[0,50)", action ="store", type = "character", help = "Stratification level"),
   make_option(c("-s", "--stratification"), 
-              default = "continent", action ="store", type = "character", help = "Stratification column")
+              default = "pct_years_cholera_cat", action ="store", type = "character", help = "Stratification column"),
+  make_option(c("-r", "--redo"), 
+              default = FALSE, action = "store", type = "logical", help = "Redo fit")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
 print(opt)
+
+if (file.exists(make_stan_data_filename(opt = opt)) & !opt$redo) {
+  stop("-- Stan data already done for ", make_stan_data_filename(opt = opt))
+} 
 
 # Load data ---------------------------------------------------------------
 
@@ -105,7 +111,8 @@ eq_str <- c(
   "hdi_cat",
   "inland_coast",
   "lag_class",
-  "out_temp_scale"
+  "out_temp_scale",
+  "pct_years_cholera_cat"
 ) %>% 
   setdiff(opt$stratification) %>% 
   str_c(collapse = " + ") %>% 
