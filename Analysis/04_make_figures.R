@@ -13,6 +13,7 @@ library(grid)
 library(dplyr)
 library(RColorBrewer)
 library(here)
+library(gt)
 
 source("Analysis/utils.R")
 
@@ -106,7 +107,7 @@ timeline_plot <- ggplot(plot_data %>% arrange(year_tl)) +
                    y = reorder(studykey, year_tl),
                    yend = reorder(studykey, year_tl),
                    color = continent),
-               linewidth = 1.2) +
+               linewidth = 2) +
   scale_color_manual(values = colors_continent()) +
   scale_x_date(date_breaks = "5 year", date_labels = "%Y") +
   labs(x = "Year", y = "Study", color = "Continent") +
@@ -225,9 +226,14 @@ ggsave(filename = "figures/fig2.png", fig2_combined,
 
 ## Second pass figure 2 ----
 timeline_plot2 <- timeline_plot + 
+  geom_segment(aes(x = year_tl, xend = year_tr,
+                   y = reorder(studykey, year_tl),
+                   yend = reorder(studykey, year_tl)),
+               color = "white",
+               linewidth = .3) +
   coord_flip() +
   theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1)) +
-  scale_x_date(breaks = seq.Date("1970-01-02", "2020-01-02", by = "5 years"), 
+  scale_x_date(breaks = seq.Date("1970-01-02", "2020-01-02", by = "10 years"), 
                date_labels = "%Y", limits = as.Date(c("1965-01-01", "2020-12-31"))) +
   theme(panel.grid.minor = element_blank()) +
   ggtitle("Temporal distribution of studies") +

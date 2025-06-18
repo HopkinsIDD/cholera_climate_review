@@ -948,12 +948,14 @@ plot_spatial_distribution_map <- function(plot_data,
   ggplot() +
     geom_sf(data = world_sf_combined, fill = "gray95", color = "white", size = 0.1) +
     geom_sf(data = all_shp %>% filter(!is.na(frac_year_exceeding_10_cases_cat)), aes(fill = frac_year_exceeding_10_cases_cat), color = "white", size = 0.1) +
-    # geom_sf(data = regional_sf, aes(fill = n_studies, linewidth = frac_year_exceeding_10_cases_cat)) +
-    # geom_sf(data = national_sf, aes(fill = n_studies, linewidth = frac_year_exceeding_10_cases_cat)) +
+    geom_sf(data = data_shp %>% 
+              mutate(coverage = if_else(admin_level_simple != "regional", "national or sub-national", "regional")), 
+            alpha = 0, aes(lty = coverage, color = n_studies), lwd = .3) +
     geom_sf(data = subregional_sf, aes(color = n_studies), alpha = 0, lwd = .5) +
     geom_sf(data = st_centroid(subregional_sf), aes(color = n_studies, size = n_studies)) +
     geom_sf(data = st_centroid(subregional_sf), color = "white", size = .5) +
     scale_fill_manual(values = c("gray95", "gray80", "gray60", "gray40"), na.value = "gray95") +
+    scale_linetype_manual(values = c(1, 2), name = "spatial resolution") +
     scale_size_continuous(breaks = c(1, 3, 5, 16), name = "# studies") +
     scale_color_viridis_c(name = "# studies", 
                           na.value = "darkorange",
@@ -962,8 +964,8 @@ plot_spatial_distribution_map <- function(plot_data,
     # https://stackoverflow.com/questions/50118741/ggplot2-colorbar-with-discontinuous-jump-for-skewed-data
     guides(
       color = guide_colorbar(title.position = "top"),
-      fill = guide_legend(title = "Cholera frequency\nin 2000-2023"),
-      size = guide_legend(title = "# studies")
+      fill = guide_legend(title = "cholera frequency\nin 2000-2023"),
+      size = guide_legend(title = "# studies at national\nor sub-national level")
     ) +
     # scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
