@@ -271,6 +271,33 @@ identify_endemicity <- function(
   return(final_summary)
 }
 
+
+# Data pulling ------------------------------------------------------------
+
+#' get_WHO_case_data
+#' 
+#' @param data_path path to taxonomy export
+#' @detail
+#' sql code to extract WHO annual report data from Cholera Taxonomy Database
+#' select * from observations where 1=2;
+#' \copy (select time_left,time_right,suspected_cases,deaths,location_id, "primary" from observations where (observation_collection_id <=480) and (observation_collection_id>=300) ) to 'who_annual_report.csv' (format csv, delimiter ';');
+#' 
+#'
+#' @returns dataframe with cases by country and year$
+get_WHO_case_data <- function(data_path = here::here("Data/endemicity/who_annual_report.csv")) {
+  read.csv(data_path) %>%
+    tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id','primary'),sep = ';',remove=T) %>%
+    filter(primary == 't') %>% 
+    merge(., read.csv(here::here("Data/endemicity/country_location_id_name.csv")), by.x="location_id",by.y="id",all.x=TRUE) %>%
+    filter(is.na(region)==F) %>%
+    arrange(region) %>%
+    mutate(country = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
+    filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2023-12-31")) %>% 
+    mutate(year = lubridate::year(time_right)) %>% 
+    select(country,suspected_cases,year) %>% 
+    as_tibble()
+}
+
 # Data summary -----------------------------------------------
 
 make_scores <- function(df) {
@@ -662,8 +689,8 @@ make_dir_data2 <- function(df,
 #' @return
 #'
 colors_continent <- function() {
-  # colors <- c("#FFA378", "#A8B545", "#8C796D")
-  colors <- c("#EB9711", "#8C07DE", "#474357")
+  colors <- c("#FFA378", "#A8B545", "#8C796D")
+  # colors <- c("#EB9711", "#8C07DE", "#474357")
   
   names(colors) <- c("Africa", "Asia", "Other")
   colors
@@ -827,16 +854,50 @@ map_plot <- function(vars = c("lag_class", "rainy_season", "urban_rural_class"),
     })
 }
 
+
+#' get_world_sf
+#'
+#' @param out_path 
+#'
+#' @returns sf object with world sf
+#'
+get_world_sf <- function(out_path = here::here("Data/shapefiles/world_sf.gpkg")) {
+  
+  if (!file.exists(out_path)) {
+    
+    cat("-- Pulling world shapefiles from geoboundaries, this can take a while.\n")
+    
+    world_sf <- rgeoboundaries::gb_adm0("all", quiet = FALSE, overwrite = FALSE, type = "simplified")
+    
+    # Add India's ADM0 from ADM1 union
+    india_adm1 <- rgeoboundaries::gb_adm1("IND", quiet = FALSE, overwrite = FALSE, type = "simplified")
+    india_union_geom <- st_union(india_adm1)
+    india_union_sf <- st_sf(
+      shapeName = "India",
+      shapeISO = "IND",
+      geometry = india_union_geom,
+      crs = st_crs(india_adm1)
+    )
+    
+    world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf) %>% 
+      taxdat::tidy_shapefiles()
+    
+    st_write(world_sf_combined, dsn = out_path, layer = "world_sf", overwrite = T)
+    
+  } else {
+    world_sf_combined <- st_read(dsn = out_path)
+  }
+  
+  world_sf_combined
+}
+
 plot_spatial_distribution_map <- function(plot_data,
                                           country_col,
                                           group_col = NULL,
                                           group_levels = NULL,
-                                          who_data = who_data) {
+                                          who_data = NULL) {
   
-  library(rgeoboundaries)
   library(sf)
-  library(tidyverse)
-  library(tidyr)
   
   # Compute the count of studies per country
   if (!is.null(group_col)) {
@@ -852,47 +913,70 @@ plot_spatial_distribution_map <- function(plot_data,
       count(!!sym(country_col), name = "n_studies")
   }
   
-  world_sf <- geoboundaries("all", adm_lvl = "adm0")
+  # Get sf object of world
+  world_sf <- get_world_sf()
   
-  # Add India's ADM0 from ADM1 union
-  india_adm1 <- geoboundaries("IND", adm_lvl = "adm1")
-  india_union_geom <- st_union(india_adm1)
-  india_union_sf <- st_sf(
-    shapeName = "India",
-    shapeISO = "IND",
-    geometry = india_union_geom,
-    crs = st_crs(india_adm1)
-  )
-  world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf)
+  who_freq <- who_data %>% 
+    group_by(country) %>% 
+    summarise(num_year_exceeding_10_cases = sum(suspected_cases>10, na.rm = T),
+              n = n(),
+              frac_year_exceeding_10_cases = num_year_exceeding_10_cases/24) %>% 
+    mutate(frac_year_exceeding_10_cases_cat =  cut(frac_year_exceeding_10_cases*100, c(0, 0.1, 50, 95, Inf), include.lowest = T, right = FALSE) %>% 
+             factor(levels = c("[0,0.1)", "[0.1,50)", "[50,95)", "[95,Inf]"),
+                    labels = c("no reported cholera", "<50%", "50-95%", ">95%")))
+  
+  all_shp <- world_sf_combined %>%
+    left_join(who_freq, 
+              by = c("shapeISO" = "country"))
   
   # Join WHO data to the spatial data
   data_shp <- world_sf_combined %>%
     left_join(country_counts, by = c("shapeISO" = country_col)) %>%
     filter(!is.na(n_studies)) %>%
-    left_join(who_data, by = c("shapeISO" = "region"))
+    left_join(who_freq, 
+              by = c("shapeISO" = "country")) %>% 
+    st_make_valid() %>% 
+    filter(!is.na(frac_year_exceeding_10_cases_cat))
   
-  # 
-  regional_sf <- data_shp %>% filter(admin_level == "regional")
-  national_sf <- data_shp %>% filter(admin_level == "national")
-  subnational_sf <- data_shp %>% filter(admin_level == "sub-national")
+  regional_sf <- data_shp %>% filter(admin_level_simple == "regional") %>% 
+    group_by()
+  # national_sf <- data_shp %>% filter(admin_level == "national")
+  subregional_sf <- data_shp %>% 
+    filter(admin_level_simple != "regional")
   
   # Plot the map with custom borders and merged panels
   ggplot() +
-    geom_sf(data = world_sf_combined, fill = "gray95", color = NA, size = 0.1) +
-    geom_sf(data = regional_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    geom_sf(data = national_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    geom_sf(data = subnational_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
-    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
+    geom_sf(data = world_sf_combined, fill = "gray95", color = "white", size = 0.1) +
+    geom_sf(data = all_shp %>% filter(!is.na(frac_year_exceeding_10_cases_cat)), aes(fill = frac_year_exceeding_10_cases_cat), color = "white", size = 0.1) +
+    # geom_sf(data = regional_sf, aes(fill = n_studies, linewidth = frac_year_exceeding_10_cases_cat)) +
+    # geom_sf(data = national_sf, aes(fill = n_studies, linewidth = frac_year_exceeding_10_cases_cat)) +
+    geom_sf(data = subregional_sf, aes(color = n_studies), alpha = 0, lwd = .5) +
+    geom_sf(data = st_centroid(subregional_sf), aes(color = n_studies, size = n_studies)) +
+    geom_sf(data = st_centroid(subregional_sf), color = "white", size = .5) +
+    scale_fill_manual(values = c("gray95", "gray80", "gray60", "gray40"), na.value = "gray95") +
+    scale_size_continuous(breaks = c(1, 3, 5, 16), name = "# studies") +
+    scale_color_viridis_c(name = "# studies", 
+                          na.value = "darkorange",
+                          limits = c(1, 5), 
+                          option = "D") +
+    # https://stackoverflow.com/questions/50118741/ggplot2-colorbar-with-discontinuous-jump-for-skewed-data
+    guides(
+      color = guide_colorbar(title.position = "top"),
+      fill = guide_legend(title = "Cholera frequency\nin 2000-2023"),
+      size = guide_legend(title = "# studies")
+    ) +
+    # scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
              ylim = c(st_bbox(data_shp)["ymin"], st_bbox(data_shp)["ymax"]),
              expand = FALSE) +
     theme_bw() +
     theme(
-      legend.position = "bottom",
-      plot.title = element_text(face = "bold", hjust = 0)
-    ) +
-    ggtitle("Spatial Distribution of Studies by Country")
+      legend.position = "right",
+      plot.title = element_text(face = "bold", hjust = 0)#,
+      # legend.margin = margin(-5, 10, -5, 10)
+    )  +
+    ggtitle("Spatial distribution of studies") +
+    scale_linewidth_manual(values = rev(c(.7, .3, .1)))
 }
 
 
