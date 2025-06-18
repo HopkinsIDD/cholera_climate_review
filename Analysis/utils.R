@@ -175,7 +175,7 @@ get_estimate_thresholds <- function() {
 }
 
 get_all_covar_patterns <- function() {
-  "continent|admin_level|full_score|lag_class|out_temp_scale|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
+  "pct_years_cholera_cat|continent|admin_level|full_score|lag_class|out_temp_scale|urban_rural_class|rainy_season|inland_coast|hdi_cat|new_climatic_zone"
 }
 
 get_all_effects <- function() {
@@ -269,6 +269,33 @@ identify_endemicity <- function(
     )
   
   return(final_summary)
+}
+
+
+# Data pulling ------------------------------------------------------------
+
+#' get_WHO_case_data
+#' 
+#' @param data_path path to taxonomy export
+#' @detail
+#' sql code to extract WHO annual report data from Cholera Taxonomy Database
+#' select * from observations where 1=2;
+#' \copy (select time_left,time_right,suspected_cases,deaths,location_id, "primary" from observations where (observation_collection_id <=480) and (observation_collection_id>=300) ) to 'who_annual_report.csv' (format csv, delimiter ';');
+#' 
+#'
+#' @returns dataframe with cases by country and year$
+get_WHO_case_data <- function(data_path = here::here("Data/endemicity/who_annual_report.csv")) {
+  read.csv(data_path) %>%
+    tidyr::separate(obs,c('time_left','time_right','suspected_cases','deaths','location_id','primary'),sep = ';',remove=T) %>%
+    filter(primary == 't') %>% 
+    merge(., read.csv(here::here("Data/endemicity/country_location_id_name.csv")), by.x="location_id",by.y="id",all.x=TRUE) %>%
+    filter(is.na(region)==F) %>%
+    arrange(region) %>%
+    mutate(country = as.factor(region),suspected_cases=as.numeric(suspected_cases)) %>% 
+    filter(time_right >= as.Date("2000-01-01") & time_right <= as.Date("2023-12-31")) %>% 
+    mutate(year = lubridate::year(time_right)) %>% 
+    select(country,suspected_cases,year) %>% 
+    as_tibble()
 }
 
 # Data summary -----------------------------------------------
@@ -630,6 +657,30 @@ add_doe_styling2 <- function(gtx) {
       missing_text = "-"
     )
 }
+
+# Attempt at combining two exposures
+make_dir_data2 <- function(df, 
+                           exposure, 
+                           covars = c("continent", "admin_level", "out_class_case_presentation")) {
+  df %>% 
+    mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
+    inner_join(scores) %>% 
+    arrange(dir_icon_lvls, score_cat, pubyear) %>% 
+    group_by(dir_icon) %>% 
+    mutate(bottom_line = row_number() == n()) %>% 
+    select(studykey, pubyear, exp_class, out_class_metric, all_of(covars), dir_icon, overall_dir, score_cat, bottom_line) %>% 
+    filter(exp_class == exposure) %>% 
+    mutate(out_class_metric = factor(out_class_metric, levels = c("incidence", "occurrence"))) %>% 
+    pivot_wider(names_from = "out_class_metric",
+                values_from = "dir_icon",
+                names_expand = TRUE) %>% 
+    select(studykey, pubyear, all_of(covars), overall_dir, score_cat, bottom_line, 
+           incidence, occurrence) %>% 
+    mutate(overall_dir = overall_dir %>% forcats::fct_relevel("Positive", "Conflicting", "Negative")) %>% 
+    arrange(overall_dir, score_cat, desc(incidence), desc(occurrence), pubyear) %>% 
+    select(-pubyear)
+}
+
 # Plots -------------------------------------------------------------------
 
 
@@ -638,14 +689,26 @@ add_doe_styling2 <- function(gtx) {
 #' @return
 #'
 colors_continent <- function() {
-  # colors <- c("#FFA378", "#A8B545", "#8C796D")
-  colors <- c("#EB9711", "#8C07DE", "#474357")
+  colors <- c("#FFA378", "#A8B545", "#8C796D")
+  # colors <- c("#EB9711", "#8C07DE", "#474357")
   
   names(colors) <- c("Africa", "Asia", "Other")
   colors
 }
 
-
+#' get_stratification_colors
+#' Colors for stratified plots of effect sizes
+#' @return
+#'
+get_stratification_colors <- function(stratification) {
+  if (stratification == "new_climatic_zone") {
+    c("#C77100", "#009E15", "#0006B3")
+  } else if (stratification == "continent") {
+    colors_continent()
+  } else if (stratification == "pct_years_cholera_cat") {
+    c("#752D00", "#E85D00", "#C29500")
+  }
+}
 
 make_facet_formula <- function(x_var) {
   as.formula(str_glue("exp_class ~ {x_var}_def")) 
@@ -791,16 +854,50 @@ map_plot <- function(vars = c("lag_class", "rainy_season", "urban_rural_class"),
     })
 }
 
+
+#' get_world_sf
+#'
+#' @param out_path 
+#'
+#' @returns sf object with world sf
+#'
+get_world_sf <- function(out_path = here::here("Data/shapefiles/world_sf.gpkg")) {
+  
+  if (!file.exists(out_path)) {
+    
+    cat("-- Pulling world shapefiles from geoboundaries, this can take a while.\n")
+    
+    world_sf <- rgeoboundaries::gb_adm0("all", quiet = FALSE, overwrite = FALSE, type = "simplified")
+    
+    # Add India's ADM0 from ADM1 union
+    india_adm1 <- rgeoboundaries::gb_adm1("IND", quiet = FALSE, overwrite = FALSE, type = "simplified")
+    india_union_geom <- st_union(india_adm1)
+    india_union_sf <- st_sf(
+      shapeName = "India",
+      shapeISO = "IND",
+      geometry = india_union_geom,
+      crs = st_crs(india_adm1)
+    )
+    
+    world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf) %>% 
+      taxdat::tidy_shapefiles()
+    
+    st_write(world_sf_combined, dsn = out_path, layer = "world_sf", overwrite = T)
+    
+  } else {
+    world_sf_combined <- st_read(dsn = out_path)
+  }
+  
+  world_sf_combined
+}
+
 plot_spatial_distribution_map <- function(plot_data,
                                           country_col,
                                           group_col = NULL,
                                           group_levels = NULL,
-                                          who_data = who_data) {
+                                          who_data = NULL) {
   
-  library(rgeoboundaries)
   library(sf)
-  library(tidyverse)
-  library(tidyr)
   
   # Compute the count of studies per country
   if (!is.null(group_col)) {
@@ -816,49 +913,139 @@ plot_spatial_distribution_map <- function(plot_data,
       count(!!sym(country_col), name = "n_studies")
   }
   
-  world_sf <- geoboundaries("all", adm_lvl = "adm0")
+  # Get sf object of world
+  world_sf <- get_world_sf()
   
-  # Add India's ADM0 from ADM1 union
-  india_adm1 <- geoboundaries("IND", adm_lvl = "adm1")
-  india_union_geom <- st_union(india_adm1)
-  india_union_sf <- st_sf(
-    shapeName = "India",
-    shapeISO = "IND",
-    geometry = india_union_geom,
-    crs = st_crs(india_adm1)
-  )
-  world_sf_combined <- bind_rows(world_sf %>% filter(shapeISO != "IND"), india_union_sf)
+  who_freq <- who_data %>% 
+    group_by(country) %>% 
+    summarise(num_year_exceeding_10_cases = sum(suspected_cases>10, na.rm = T),
+              n = n(),
+              frac_year_exceeding_10_cases = num_year_exceeding_10_cases/24) %>% 
+    mutate(frac_year_exceeding_10_cases_cat =  cut(frac_year_exceeding_10_cases*100, c(0, 0.1, 50, 95, Inf), include.lowest = T, right = FALSE) %>% 
+             factor(levels = c("[0,0.1)", "[0.1,50)", "[50,95)", "[95,Inf]"),
+                    labels = c("no reported cholera", "<50%", "50-95%", ">95%")))
+  
+  all_shp <- world_sf_combined %>%
+    left_join(who_freq, 
+              by = c("shapeISO" = "country"))
   
   # Join WHO data to the spatial data
   data_shp <- world_sf_combined %>%
     left_join(country_counts, by = c("shapeISO" = country_col)) %>%
     filter(!is.na(n_studies)) %>%
-    left_join(who_data, by = c("shapeISO" = "region"))
+    left_join(who_freq, 
+              by = c("shapeISO" = "country")) %>% 
+    st_make_valid() %>% 
+    filter(!is.na(frac_year_exceeding_10_cases_cat))
   
-  # 
-  regional_sf <- data_shp %>% filter(admin_level == "regional")
-  national_sf <- data_shp %>% filter(admin_level == "national")
-  subnational_sf <- data_shp %>% filter(admin_level == "sub-national")
+  regional_sf <- data_shp %>% filter(admin_level_simple == "regional") %>% 
+    group_by()
+  # national_sf <- data_shp %>% filter(admin_level == "national")
+  subregional_sf <- data_shp %>% 
+    filter(admin_level_simple != "regional")
   
   # Plot the map with custom borders and merged panels
   ggplot() +
-    geom_sf(data = world_sf_combined, fill = "gray95", color = NA, size = 0.1) +
-    geom_sf(data = regional_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    geom_sf(data = national_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    geom_sf(data = subnational_sf, aes(fill = n_studies, color = num_year_exceeding_10_cases), size = 0.1) +
-    scale_fill_viridis_c(direction = -1, name = "Number of Studies", na.value = "white") +
-    scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
+    geom_sf(data = world_sf_combined, fill = "gray95", color = "white", size = 0.1) +
+    geom_sf(data = all_shp %>% filter(!is.na(frac_year_exceeding_10_cases_cat)), aes(fill = frac_year_exceeding_10_cases_cat), color = "white", size = 0.1) +
+    geom_sf(data = data_shp %>% 
+              mutate(coverage = if_else(admin_level_simple != "regional", "national or sub-national", "regional")), 
+            alpha = 0, aes(lty = coverage, color = n_studies), lwd = .3) +
+    geom_sf(data = subregional_sf, aes(color = n_studies), alpha = 0, lwd = .5) +
+    geom_sf(data = st_centroid(subregional_sf), aes(color = n_studies, size = n_studies)) +
+    geom_sf(data = st_centroid(subregional_sf), color = "white", size = .5) +
+    scale_fill_manual(values = c("gray95", "gray80", "gray60", "gray40"), na.value = "gray95") +
+    scale_linetype_manual(values = c(1, 2), name = "spatial resolution") +
+    scale_size_continuous(breaks = c(1, 3, 5, 16), name = "# studies") +
+    scale_color_viridis_c(name = "# studies", 
+                          na.value = "darkorange",
+                          limits = c(1, 5), 
+                          option = "D") +
+    # https://stackoverflow.com/questions/50118741/ggplot2-colorbar-with-discontinuous-jump-for-skewed-data
+    guides(
+      color = guide_colorbar(title.position = "top"),
+      fill = guide_legend(title = "cholera frequency\nin 2000-2023"),
+      size = guide_legend(title = "# studies at national\nor sub-national level")
+    ) +
+    # scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
              ylim = c(st_bbox(data_shp)["ymin"], st_bbox(data_shp)["ymax"]),
              expand = FALSE) +
     theme_bw() +
     theme(
-      legend.position = "bottom",
-      plot.title = element_text(face = "bold", hjust = 0)
-    ) +
-    ggtitle("Spatial Distribution of Studies by Country")
+      legend.position = "right",
+      plot.title = element_text(face = "bold", hjust = 0)#,
+      # legend.margin = margin(-5, 10, -5, 10)
+    )  +
+    ggtitle("Spatial distribution of studies") +
+    scale_linewidth_manual(values = rev(c(.7, .3, .1)))
 }
 
+
+
+
+make_gt_dirplot <- function(data, exposure) {
+  # Make direction data for this exposure
+  this_dir_dat <- make_dir_data2(df = data, exposure = exposure)
+  
+  # Build gt table
+  gt_table <- this_dir_dat %>%
+    gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
+    fmt_icon(c("incidence", "occurrence")) %>% 
+    add_doe_styling2() %>% 
+    tab_header(title = str_to_title(exposure))
+  
+  gt_table
+}
+
+save_gt_dirplot <- function(data, exposure) {
+  gt_table <- make_gt_dirplot(data = data, exposure = exposure)
+  gtsave(
+    gt_table, 
+    filename = str_glue("figures/dirplot_{exposure}.png"), 
+    zoom = 4, 
+    vwidth = 1200,
+    vheight = 1800
+  )
+}
+
+compose_effdir_plot <- function(data,
+                                filename = "figures/eff_dir_plot_exposures_by_outcome.png") {
+  # Save tables for all exposures
+  walk(
+    get_all_exp_class(), 
+    ~ save_gt_dirplot(data = data, exposure = .)
+  )
+  
+  # Read images and compose
+  plots <- map(
+    get_all_exp_class(),
+    function(x) {
+      image_read(str_glue("figures/dirplot_{x}.png")) %>% 
+        image_ggplot() + 
+        theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
+    }
+  ) %>% 
+    set_names(get_all_exp_class())
+  
+  # Compose
+  p_exposures <- (plots[["precipitation"]] + plots[["temperature"]] + plots[["flood"]] + plots[["drought"]]) + 
+    plot_layout(
+      design = "
+    AB
+    AB
+    AC
+    AD
+    ")
+  
+  ggsave(
+    p_exposures, 
+    filename = filename,
+    width = 12,
+    height = 18,
+    dpi = 600
+  )
+}
 
 # Misc --------------------------------------------------------------------
 
@@ -945,6 +1132,21 @@ make_stan_fit_filename <- function(outdir = here("generated_data/"),
                 type = "rds")
 }
 
+#' make_stan_genquant_filename
+#' filename for stan genquant
+#' 
+#' @param outdir 
+#' @param opt 
+#'
+make_stan_genquant_filename <- function(outdir = here("generated_data/"),
+                                        opt) {
+  
+  make_filename(basename = "stan_genquant",
+                outdir = outdir,
+                opt = opt,
+                parse_opt = parse_stan_opt,
+                type = "rds")
+}
 
 # Post-stratification -----------------------------------------------------
 
@@ -1073,17 +1275,17 @@ get_run_info <- function(x) {
     stratification = parse_info(x, get_all_covar_patterns()),
     level = str_extract(x, str_glue("(?<={stratification}-)(.)*(?=\\.)"))
   ) %>% 
-    replace_na(list(stratification = "none",
-                    level = "all"))
+    replace_na(list(stratification = "none", level = "all"))
   
 }
+
 
 get_effect_sizes <- function(res_files) {
   map_df(res_files, function(x) {
     
     # Read stan fit and data
     stan_fit <- readRDS(x)
-    stan_data <- readRDS(str_replace(x, "stan_fit", "stan_data"))
+    stan_data <- readRDS(str_replace(x, "stan_genquant", "stan_data"))
     
     # Information on run (exposure, outcome, stratification)
     run_info <- get_run_info(x)
@@ -1091,11 +1293,19 @@ get_effect_sizes <- function(res_files) {
     # Parse strata levels
     strata_levels <- unlist(map(stan_data$all_covars, ~ levels(stan_data$data[[.]])))
     
+    # Custom change to mixed category for rainy season
+    ind_mixed <- which(strata_levels == "mixed")
+    if (strata_levels[ind_mixed[1]-1] == "out of season") {
+      strata_levels[ind_mixed[1]] <- "both"
+    }
+    
     # Get draw summaries and add info
     stan_fit$summary("eff_size") %>%
       mutate(var = colnames(stan_data$X),
              what = str_extract(var, get_all_covar_patterns()),
              strata = str_remove(var, what),
+             # Custom fix for dupplicated pattern
+             strata = if_else(what == "rainy_season" & strata == "mixed", "both", strata),
              strata = factor(strata, levels = strata_levels)) %>%
       filter(!is.na(what)) %>% 
       mutate(what = map_chr(what, function(w) {
@@ -1108,16 +1318,30 @@ get_effect_sizes <- function(res_files) {
   }) 
 }
 
+# get_ref_cat_dict <- function() {
+#   c(
+#     "1 week" = "1 week",
+#     "0-14 days" = "0-14 days",
+#     "[0,50)" = "< 50% of years",
+#     "Arid" = "arid",
+#     "Africa" = "Africa",
+#     "Coast" = "coast",
+#     "high hdi" = "high",
+#     "out_of_rainy_season" = "out"
+#     )
+# }
+
 get_covar_dict <- function() {
   c(
-    "lag_class" = "temporal lag",
+    "lag_class" = "temporal lag\nof exposure-outcome",
     "out_temp_scale" = "temporal resolution\nof outcome",
     "continent" = "continent",
     "hdi_cat" = "HDI",
-    "inland_coast" = "Distance\nto coast",
+    "inland_coast" = "coastal",
     "new_climatic_zone" = "climatic zone",
     "rainy_season" = "seasonal\ntiming",
-    "urban_rural_class" = "urbanicity"
+    "urban_rural_class" = "urbanicity",
+    "pct_years_cholera_cat" = "cholera\nfrequency"
   )
 }
 

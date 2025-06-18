@@ -18,13 +18,16 @@ option_list <- list(
   make_option(c("-o", "--out_class"), 
               default = "incidence", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-l", "--level"), 
-              default = "Asia", action ="store", type = "character", help = "Stratification level"),
+              default = "Africa", action ="store", type = "character", help = "Stratification level"),
   make_option(c("-s", "--stratification"), 
-              default = "continent", action ="store", type = "character", help = "Stratification column")
+              default = "continent", action ="store", type = "character", help = "Stratification column"),
+  make_option(c("-r", "--redo"), 
+              default = FALSE, action = "store", type = "logical", help = "Redo fit")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
 print(opt)
+
 
 # Load stan data ----------------------------------------------------------
 
@@ -38,19 +41,38 @@ if (!str_detect(opt$effect, "direction")) {
   stan_model <- cmdstan_model("Analysis/stan/direction_meta_analysis_marginalize_weighted.stan")
 }
 
-stan_fit <-  stan_model$sample(
-  data = append(
-    stan_data$stan_data, 
-    list(transform = 1)
-  ),
-  iter_warmup = 250,
-  iter_sampling = 500,
-  parallel_chains = 4,
-  init = .1,
-  max_treedepth = 10
-)
+if (file.exists(make_stan_fit_filename(opt = opt)) & !opt$redo) {
+  cat("-- Stan fit already done for", make_stan_fit_filename(opt = opt), "\n")
+  
+  stan_fit <- readRDS(make_stan_fit_filename(opt = opt))
+} else {
+  
+  stan_fit <-  stan_model$sample(
+    data = append(
+      stan_data$stan_data, 
+      list(transform = 1)
+    ),
+    iter_warmup = 250,
+    iter_sampling = 500,
+    parallel_chains = 4,
+    init = .1,
+    max_treedepth = 10
+  )
+  
+  stan_fit$save_object(make_stan_fit_filename(opt = opt))
+} 
 
-# stan_fit$save_object(make_stan_fit_filename(opt = opt))
+
+# Genquant ----------------------------------------------------------------
+
+genquant <- stan_model$generate_quantities(fitted_params = stan_fit,
+                                           data = stan_data$stan_data,
+                                           parallel_chains = 4)
+
+genquant$save_object(make_stan_genquant_filename(opt = opt))
+
+# Scraps ------------------------------------------------------------------
+
 # 
 # stan_fit$summary(c("sigma_re", "beta"))
 # stan_fit$draws(c("beta")) %>%
@@ -99,3 +121,5 @@ stan_fit <-  stan_model$sample(
 # p_pos
 
 # ggsave(p_pos, filename = "figures/poststrat_positive_direction.png", width = 12, height = 5) 
+
+

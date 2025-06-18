@@ -25,7 +25,7 @@ dat_path <- here::here("Data/extracted_data/cholera_climate_systematic_review_ex
 
 # Load effect extraction data
 est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
-  read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
+  read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>%
   # Fix dates
   mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>% 
   # Unpack countries for multi-country studies
@@ -77,40 +77,65 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     ),
     # Update class to reflect change in ratios
     a_class = case_when(a_class == "ratio" ~ "log10_ratio",
-                        TRUE ~ a_class)) %>% 
-  # Levels
-  mutate(a_direction = factor(a_direction, levels = c("negative", "none", "positive", "not stated"))) %>%
+                        TRUE ~ a_class)
+  ) %>% 
   # Spatial scales
   mutate(
     admin_level = case_when(eff_admin == "adm0" ~ "national", 
                             str_detect(eff_admin, "[1-4]") ~ "sub-national",
                             str_detect(eff_country, "\\|") | str_detect(eff_country, "multi") ~ "regional",
                             TRUE ~ "sub-national"),
-    admin_level = factor(admin_level, levels = c("regional", "national", "sub-national", "other"))
+    admin_level = factor(admin_level, 
+                         levels = c("regional", "national", "sub-national", "other")),
   ) %>% 
-  mutate(exp_class = factor(exp_class, levels = c("precipitation", "temperature", "flood", "drought"))) %>%
-  # Define lag
-  mutate(lag_days = ifelse(lag_days == "missing", NA_character_, lag_days) %>% as.numeric(),
-         lag_class = cut(lag_days, c(0, 8, 15, 32, 62, 92, Inf),
-                         include.lowest = TRUE, right = FALSE),
-         lag_class = factor(lag_class, 
-                            levels = c("[0,8)", "[8,15)", "[15,32)", "[32,62)", "[62,92)", "[92,Inf)"),
-                            labels = c("1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months"))) %>% 
-  # Define rainy season
-  mutate(rainy_season = factor(rainy_season, 
-                               levels = c("out_of_rainy_season", "mixed", "in_rainy_season"), 
-                               labels = c("out_of_rainy_season", "both seasons", "in_rainy_season"))) %>% 
-  # Define urba/rural
-  mutate(urban_rural_class = factor(urban_rural_class, levels = c("rural", "mixed", "urban"))) %>% 
+  # Add continent
   add_continent(country_col = "eff_country") %>% 
-  mutate(continent = factor(continent)) %>% 
-  mutate(a_uncert_significant = factor(a_uncert_significant, 
-                                       levels = c("TRUE", "FALSE", "NA"),
-                                       labels = c("TRUE", "FALSE", "unspecified"))) %>% 
-  mutate(out_temp_scale = factor(get_out_tempscale_dict()[as.character(out_temp_scale)], levels = get_out_tempscale_dict())) %>% 
-  mutate(new_climatic_zone = factor(new_climatic_zone),
-         inland_coast = factor(inland_coast),
-         hdi_cat = factor(hdi_cat))
+  # Modification of factor levels and labels
+  mutate(
+    # Levels of direction
+    a_direction = factor(a_direction, levels = c("negative", "none", "positive", "not stated")),
+    # Levels of exposure variable
+    exp_class = factor(exp_class, 
+                       levels = c("precipitation", "temperature", "flood", "drought")),
+    # Define lags between exposures and outcomes
+    lag_days = ifelse(lag_days == "missing", NA_character_, lag_days) %>% as.numeric(),
+    lag_class = cut(lag_days, c(0, 1, 8, 15, 32, 62, 92, Inf),
+                    include.lowest = TRUE, right = FALSE),
+    lag_class = factor(lag_class, 
+                       levels = c("[0,1)", "[1,8)", "[8,15)", "[15,32)", "[32,62)", "[62,92)", "[92,Inf)"),
+                       labels = c("no lag", "1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months")),
+    # Define rainy season
+    rainy_season = factor(rainy_season, 
+                          levels = c("out_of_rainy_season", "mixed", "in_rainy_season"), 
+                          labels = c("out of season", "both", "in season")),
+    # Define urba/rural
+    urban_rural_class = factor(urban_rural_class, 
+                               levels = c("rural", "mixed", "urban")),
+    continent = factor(continent),
+    # Levels of uncertainty
+    a_uncert_significant = factor(a_uncert_significant, 
+                                  levels = c("TRUE", "FALSE", "NA"),
+                                  labels = c("TRUE", "FALSE", "unspecified")),
+    # Levels of temporal scale
+    out_temp_scale = factor(get_out_tempscale_dict()[as.character(out_temp_scale)], levels = get_out_tempscale_dict()),
+    out_temp_scale = if_else(out_temp_scale == "missing", NA, out_temp_scale),
+    # Define categories of pct years with cholera
+    pct_years_cholera_cat = cut(mean_percent_year_with_cases, c(0, 50, 95, Inf), include.lowest = T, right = FALSE) %>% 
+      factor(levels = c("[0,50)", "[50,95)", "[95,Inf]"),
+             labels = c("<50%", "50-95%", ">95%")),
+    # Levels of climate zones
+    new_climatic_zone = factor(new_climatic_zone, 
+                               levels = c("Tropical", "Temperate", "Arid", "Polar"),
+                               labels = c("tropical", "temperate", "arid", "polar")),
+    # Levels of climate zones
+    inland_coast = factor(inland_coast, 
+                          levels = c("Coastal", "Inland"),
+                          labels = c("coastal", "inland")),
+    # Levels of HDI categories
+    hdi_cat = factor(hdi_cat, 
+                     levels = c("low hdi", "medium hdi", "high hdi", "very high hdi"),
+                     labels = c("low", "medium", "high", "very high"))
+  )
 
 # Save
 saveRDS(est_data, file = "generated_data/processed_estimate_data.rds")

@@ -3,11 +3,11 @@
 echo "Beginning of script"
 date
 
-effects=('corr' 'direction_positive')
+effects=('direction_positive')
 exposures=('flood' 'precipitation' 'temperature' 'drought')
 outclass=('occurrence' 'incidence')
-levels=('all' 'Asia' 'Africa' 'other' 'Arid' 'Temperate' 'Tropical')
-strat=('none' 'continent' 'continent' 'continent' 'new_climatic_zone' 'new_climatic_zone' 'new_climatic_zone')
+levels=('all' 'Asia' 'Africa' 'Other' 'arid' 'temperate' 'tropical' '<50%' '50-95%' '>95%')
+strat=('none' 'continent' 'continent' 'continent' 'new_climatic_zone' 'new_climatic_zone' 'new_climatic_zone' 'pct_years_cholera_cat' 'pct_years_cholera_cat' 'pct_years_cholera_cat')
 
 for effect in "${effects[@]}"
 do
@@ -15,12 +15,12 @@ do
   do
     for out in "${outclass[@]}"
     do
-      for i in {0..6}
+      for i in {0..9}
       do
-      echo "Running $variable $exposure $out";
-      Rscript Analysis/02_prepare_meta_analysis.R -e $effect  -c $exposure -o $out -l ${levels[i]} -s ${strat[i]};
-      Rscript Analysis/03_run_meta_analysis.R -e $effect  -c $exposure -o $out -l ${levels[i]} -s ${strat[i]};
-    done
+      echo "------- Running $variable $exposure $out ${strat[i]} ${levels[i]} -------";
+      Rscript Analysis/02_prepare_meta_analysis.R -e $effect  -c $exposure -o $out -l ${levels[i]} -s ${strat[i]} -r TRUE;
+      Rscript Analysis/03_run_meta_analysis.R -e $effect  -c $exposure -o $out -l ${levels[i]} -s ${strat[i]} -r TRUE;
+      done
     done
   done
 done
