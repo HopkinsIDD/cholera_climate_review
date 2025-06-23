@@ -30,26 +30,26 @@ scores <- readRDS(here("generated_data/paper_scores.rds")) %>%
   slice_min(tot_score, with_ties = F) %>%
   ungroup() %>% 
   distinct(studykey, tot_score) %>% 
-  mutate(score_cat = cut(tot_score, c(0, 6, 11, Inf), include.lower = T, right = F),
-         score_cat = factor(score_cat, labels = c("low", "medium", "high")) %>% 
-           forcats::fct_relevel(rev(c("low", "medium", "high"))))
+  mutate(score_cat = cut(tot_score, c(0, 6, 11, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
+         # score_cat = factor(score_cat, labels = c("low", "medium", "high")) %>% 
+         score_cat = forcats::fct_relevel(score_cat, rev( c("low", "medium", "high"))))
 
 
 # Compute statistics for direction of effect plot
 dir_data <- est_data %>% 
-  mutate(out_class_case_presentation = case_when(
-    out_class_case_presentation == "not stated" ~ "unknown",
-    !str_detect(out_class_case_presentation, "confirmed") ~ "suspected",
-    !str_detect(out_class_case_presentation, "suspected") ~ "confirmed",
-    TRUE ~ "mixed"
-  )) %>% 
-  group_by(studykey, out_class_metric, exp_class, continent, admin_level) %>%
+  # mutate(out_class_case_presentation = case_when(
+  #   out_class_case_presentation == "not stated" ~ "unknown",
+  #   !str_detect(out_class_case_presentation, "confirmed") ~ "suspected",
+  #   !str_detect(out_class_case_presentation, "suspected") ~ "confirmed",
+  #   TRUE ~ "mixed"
+  # )) %>% 
+  # group_by(studykey, out_class_metric, exp_class, continent, admin_level) %>%
   # Define single case definition for study
-  mutate(out_class_case_presentation = case_when(any(out_class_case_presentation == "unknown") ~ "unknown",
-                                                 any(out_class_case_presentation == "unknown") ~ "mixed",
-                                                 all(out_class_case_presentation == "suspected") ~ "suspected",
-                                                 all(out_class_case_presentation == "confirmed") ~ "confirmed",
-                                                 TRUE ~ "mixed")) %>% 
+  # mutate(out_class_case_presentation = case_when(any(out_class_case_presentation == "unknown") ~ "unknown",
+  #                                                any(out_class_case_presentation == "unknown") ~ "mixed",
+  #                                                all(out_class_case_presentation == "suspected") ~ "suspected",
+  #                                                all(out_class_case_presentation == "confirmed") ~ "confirmed",
+  #                                                TRUE ~ "mixed")) %>% 
   group_by(studykey, out_class_case_presentation, out_class_metric, exp_class, continent, admin_level) %>%
   summarise_directions() %>% 
   ungroup()  %>% 
