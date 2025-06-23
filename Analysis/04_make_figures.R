@@ -31,25 +31,11 @@ scores <- readRDS(here("generated_data/paper_scores.rds")) %>%
   ungroup() %>% 
   distinct(studykey, tot_score) %>% 
   mutate(score_cat = cut(tot_score, c(0, 6, 11, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
-         # score_cat = factor(score_cat, labels = c("low", "medium", "high")) %>% 
          score_cat = forcats::fct_relevel(score_cat, rev( c("low", "medium", "high"))))
 
 
 # Compute statistics for direction of effect plot
 dir_data <- est_data %>% 
-  # mutate(out_class_case_presentation = case_when(
-  #   out_class_case_presentation == "not stated" ~ "unknown",
-  #   !str_detect(out_class_case_presentation, "confirmed") ~ "suspected",
-  #   !str_detect(out_class_case_presentation, "suspected") ~ "confirmed",
-  #   TRUE ~ "mixed"
-  # )) %>% 
-  # group_by(studykey, out_class_metric, exp_class, continent, admin_level) %>%
-  # Define single case definition for study
-  # mutate(out_class_case_presentation = case_when(any(out_class_case_presentation == "unknown") ~ "unknown",
-  #                                                any(out_class_case_presentation == "unknown") ~ "mixed",
-  #                                                all(out_class_case_presentation == "suspected") ~ "suspected",
-  #                                                all(out_class_case_presentation == "confirmed") ~ "confirmed",
-  #                                                TRUE ~ "mixed")) %>% 
   group_by(studykey, out_class_case_presentation, out_class_metric, exp_class, continent, admin_level) %>%
   summarise_directions() %>% 
   ungroup()  %>% 
@@ -64,26 +50,15 @@ dir_data <- est_data %>%
 # Figure 2: Spatial-temporal coverage of studies --------------------------
 
 ## Fig 2a Spatial coverage map ----
-plot_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
-  rename(admin_level = new_admin) %>% 
-  mutate(admin_level = case_when(
-    admin_level == "subnational" ~ "sub-national",
-    admin_level == "supranational" ~ "regional",
-    TRUE ~ "national"
-  )) %>% 
+plot_data <- readRDS("generated_data/processed_estimate_data.rds") %>% 
   rowwise() %>% 
   mutate(
-    year_tl = ifelse(nchar(eff_tl) == 5, as.character(as.Date(as.numeric(eff_tl),origin="1899-12-30")), as.character(paste0(as.numeric(substr(eff_tl,1,4)),"-01-01"))),
-    year_tr = ifelse(nchar(eff_tr) == 5, as.character(as.Date(as.numeric(eff_tr),origin="1899-12-30")),  as.character(paste0(as.numeric(substr(eff_tr,1,4)),"-01-01")))
-  ) %>% 
-  mutate(
-    year_tl = ymd(year_tl),
-    year_tr = ymd(year_tr),
+    year_tl = ymd(eff_tl),
+    year_tr = ymd(eff_tr),
     duration_days = as.numeric(year_tr - year_tl),
     start_year = year(year_tl),
     start_date = lubridate::make_date(start_year, 1, 1)
   ) %>% 
-  add_continent(country_col="eff_country") %>% 
   filter_final_analysis_dataset(., criteria = expr(start_year > 1961))  %>% 
   mutate(admin_level_simple = if_else(admin_level == "regional", "regional", "national or sub-national"))
 
@@ -399,7 +374,7 @@ colors <- colorspace::sequential_hcl(3, palette = "BluYl")
 names(colors) <- c( "Subnational","National", "Regional")
 
 shapefiles_tagged <- bind_rows(
-  shapefiles %>% filter(lctn_pr %in% unique(loc_regional$lctn_pr)) %>% mutate(spatial_scale = "Regional"),
+  #shapefiles %>% filter(lctn_pr %in% unique(loc_regional$lctn_pr)) %>% mutate(spatial_scale = "Regional"),
   shapefiles %>% filter(lctn_pr %in% unique(loc_national$lctn_pr)) %>% mutate(spatial_scale = "National"),
   shapefiles %>% filter(lctn_pr %in% unique(loc_subnational$lctn_pr)) %>% mutate(spatial_scale = "Subnational")
 )
@@ -429,14 +404,15 @@ figS1 <- ggplot() +
     expand = FALSE
   )
 
-ggsave('Figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('Figures/figS1.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
 shapefiles <- st_transform(shapefiles, crs = st_crs(world))
 
 external_sf <- plot_data %>% 
-  distinct(average_hdi, new_climatic_zone, inland_coast, mean_percent_year_with_cases,lctn_pr) %>%
+  filter(admin_level %in% c("national", "sub-national")) %>% 
+  distinct(average_hdi, new_climatic_zone, inland_coast, mean_percent_year_with_cases,lctn_pr, admin_level) %>%
   left_join(
     shapefiles,
     by = "lctn_pr"
@@ -462,7 +438,7 @@ external_sf <- plot_data %>%
 
 bbox <- sf::st_bbox(external_sf)
 
-map_hdi <- ggplot() +
+map_hdi <- ggplot(data = external_sf) +
   geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
   geom_sf(data = external_sf, aes(fill = hdi_cat), color = "grey60", size = 0.1) +
   scale_fill_brewer(
@@ -475,9 +451,10 @@ map_hdi <- ggplot() +
     xlim = c(bbox["xmin"], bbox["xmax"]),
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
-  )
+  ) +
+  facet_grid(~ admin_level)
 
-map_climate <- ggplot() +
+map_climate <- ggplot(data = external_sf) +
   geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
   geom_sf(data = external_sf, aes(fill = new_climatic_zone), color = "grey60", size = 0.1) +
   scale_fill_brewer(
@@ -490,13 +467,14 @@ map_climate <- ggplot() +
     xlim = c(bbox["xmin"], bbox["xmax"]),
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
-  )
+  )+
+  facet_grid(~ admin_level)
 
-map_inland <- ggplot() +
+map_inland <- ggplot(data = external_sf) +
   geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
   geom_sf(data = external_sf, aes(fill = inland_coast), color = "grey60", size = 0.1) +
   scale_fill_manual(
-    values = c("Coastal" = "#6baed6", "Inland" = "#08519c"),
+    values = c("coastal" = "#6baed6", "inland" = "#08519c"),
     name = "Proximity to ocean",
     na.value = "white"
   ) +
@@ -505,9 +483,11 @@ map_inland <- ggplot() +
     xlim = c(bbox["xmin"], bbox["xmax"]),
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
-  )
+  )+
+  facet_grid(~ admin_level)
 
-map_endemicity <- ggplot() +
+
+map_endemicity <- ggplot(data = external_sf) +
   geom_sf(data = world, fill = "grey95", color = "grey90", size = 0.1) +
   geom_sf(data = external_sf, aes(fill = endemicity_group), color = "grey60", size = 0.1) +
   scale_fill_brewer(
@@ -520,12 +500,14 @@ map_endemicity <- ggplot() +
     xlim = c(bbox["xmin"], bbox["xmax"]),
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
-  )
+  )+
+  facet_grid(~ admin_level)
+
 
 figS2 <- map_hdi / map_climate / map_inland / map_endemicity +
   plot_layout(ncol = 1)
 
-ggsave('Figures/figS2_new.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
+ggsave('Figures/figS2.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
 
 ## Figure S3. Histogram of time period duration and median by continent ----
 plot_data_binned <- plot_data %>%
@@ -577,12 +559,6 @@ duration_medians <- plot_data_country %>%
   summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
   mutate(line_label = "Median duration")
 
-continent_fills <- c(
-  "Africa" = "#FFA378",
-  "Asia" = "#A8B545",
-  "Other" = "#8C796D"
-)
-
 figS4 <- ggplot(plot_data_country) +
   geom_histogram(aes(x = duration_days/365,fill = continent), 
                  binwidth = 1, position = "stack") +
@@ -590,7 +566,7 @@ figS4 <- ggplot(plot_data_country) +
              aes(xintercept = median_duration/365, linetype = line_label),
              linewidth = 0.4, color = "black") +
   scale_linetype_manual(values = c("Median duration" = "dashed")) +
-  scale_fill_manual(values = continent_fills) +
+  scale_fill_manual(values = colors_continent()) +
   scale_x_continuous(
     name = "Average Study Duration (years)",
     breaks = seq(0, max(plot_data$duration_days, na.rm = TRUE)/365, by = 5)
@@ -610,29 +586,11 @@ figS4 <- ggplot(plot_data_country) +
   ) +
   facet_wrap(~eff_country)
 
-ggsave('Figures/figS4_new.png',plot=figS4,width = 16, height = 16, dpi = 300, bg = "white")
+ggsave('Figures/figS4.png',plot=figS4,width = 14, height = 8, dpi = 300, bg = "white")
 
 ## Figure S5. Tile plot by study for each exposure variable ----
 quality_data <- plot_data %>%
-  mutate(
-    exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
-    exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
-    exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
-    out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
-    out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
-    out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
-    out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
-    a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
-    a_class_tf = ifelse(a_effect == "not stated", 0, 1),
-    a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
-    a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
-    tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
-      out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-      a_class_tf + a_adjusted_tf + a_uncert_def_tf,
-    exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
-    out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
-    a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
-  )  %>% 
+  make_scores() %>% 
   group_by(studykey,exp_class) %>%
   summarise(
     exp_temp_perfect = as.integer(all(exp_temp_tf == 1)),
@@ -704,7 +662,7 @@ plot_long <- quality_data %>%
     studykey = factor(studykey, levels = sort(unique(studykey)))
   )
 
-figS5 <- ggplot(plot_long, aes(x = variable_label, y = studykey, fill = factor(is_perfect))) +
+figS5_prep <- ggplot(plot_long %>% filter(exp_class == "precipitation"), aes(x = variable_label, y = studykey, fill = factor(is_perfect))) +
   geom_tile(color = "white") +
   scale_fill_manual(
     values = c("0" = "#1f78b4", "1" = "#ffdf00"),  # Blue (0), Yellow (1)
@@ -719,8 +677,26 @@ figS5 <- ggplot(plot_long, aes(x = variable_label, y = studykey, fill = factor(i
     strip.text = element_text(face = "bold")
   )
 
+figS5_other3 <- ggplot(plot_long %>% filter(exp_class != "precipitation"), aes(x = variable_label, y = studykey, fill = factor(is_perfect))) +
+  geom_tile(color = "white") +
+  scale_fill_manual(
+    values = c("0" = "#1f78b4", "1" = "#ffdf00"),  # Blue (0), Yellow (1)
+    name = "Reporting status"
+  ) +
+  labs(x = "Quality Dimension", y = "Study") +
+  facet_grid(exp_class ~ type, scales = "free", space = "free") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.background = element_rect(fill = "grey90"),
+    strip.text = element_text(face = "bold")
+  )
 
-ggsave('Figures/figS5_new.png',plot=figS5,width = 12, height = 16, dpi = 300, bg = "white")
+figS5 <- (figS5_prep / figS5_other3) +
+  plot_layout(ncol = 2, guides = "collect") +
+  plot_annotation(tag_levels = "a")
+
+ggsave('Figures/figS5.png',plot=figS5,width = 10, height = 12, dpi = 300, bg = "white")
 
 ## Figure S6-S8: effect size stratification by continent, climate and endemicity ----
 
