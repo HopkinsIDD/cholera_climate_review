@@ -1043,6 +1043,7 @@ compose_effdir_plot <- function(data,
   )
   
   # Read images and compose
+  library(magick)
   plots <- map(
     get_all_exp_class(),
     function(x) {
