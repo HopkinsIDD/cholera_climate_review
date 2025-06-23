@@ -7,7 +7,7 @@ output:
     toc_depth: 2
     number_sections: true
 params:
-  data_path: "Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
+  data_path: "generated_data/processed_estimate_data.rds"
   who_data_path: "Data/endemicity/who_annual_report.csv"
   location_file_path: "Data/endemicity/country_location_id_name.csv"
 
@@ -24,63 +24,13 @@ library(gt)
 library(survey)
 
 # Load the dataset from the file path
-data <- readr::read_csv(here::here(params$data_path)) %>% 
-  mutate(
-    admin_level = case_when(
-      new_admin == "supranational" ~ "regional",
-      TRUE ~ new_admin
-    )
-  ) %>% 
-  add_continent("eff_country") %>% 
-  mutate(
-    exp_class =factor(exp_class, levels = c("precipitation","temperature","flood","drought"))
-  )  %>% 
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+data <- readRDS(here::here(params$data_path)) %>% 
   mutate(study_year_tl = lubridate::year(eff_tl),
-         study_year_tr = lubridate::year(eff_tr)) %>% 
-  filter_final_analysis_dataset(
-    ., criteria = list(expr(study_year_tl > 1961))
-  ) # remove papers/estimates before 7th pandemic
+         study_year_tr = lubridate::year(eff_tr))
 ```
 
 # Table 1
 ```{r}
-data <- data %>%
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
-  mutate(study_year_tl = lubridate::year(eff_tl),
-         study_year_tr = lubridate::year(eff_tr)) %>%
-  mutate(duration = as.numeric(eff_tr - eff_tl)) %>%
-  mutate(study_duration = case_when(
-    duration <= 366 ~ "<1 year",
-    duration <= 366*2 ~ "1-2 years",
-    duration <= 366*5 ~ "2-5 years",
-    duration <= 366*10 ~ "5-10 years",
-    TRUE ~ ">10 years"
-  )) %>% 
-  mutate(new_out_class_case_presentation = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>% 
-  mutate(
-    sig_report = case_when(
-      a_uncert_def == "not stated" ~ FALSE,
-      TRUE ~ TRUE
-    )
-  ) %>% 
-  mutate(out_temp_scale = factor(out_temp_scale,
-                                 levels = c(0, 1, 2, 3, 4, 99),
-                                 labels = c("0 day",
-                                            "1-14 days",
-                                            "15-30 days",
-                                            "31-365 days",
-                                            ">365 days",
-                                            "missing")))
-
 # Helper function: generate summary table with Total column
 make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("Overall","by exp"),  exp_class_order = c("precipitation", "temperature", "flood","drought","Overall")
 ) {
