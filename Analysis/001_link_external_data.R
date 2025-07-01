@@ -384,7 +384,7 @@ data_joined <- data_expanded %>%
             by = c("country", "exp_class"))
 
 data_summarized <- data_joined %>%
-  group_by(row_id) %>%  # temporary row ID to collapse back
+  group_by(row_id) %>%
   summarise(
     eff_country = str_c(unique(country), collapse = "|"),
     exp_class = first(exp_class),
@@ -396,3 +396,75 @@ data_final <- data_now %>%
   left_join(data_summarized %>% select(row_id,mean_percent_year_with_cases), by = "row_id") %>%
   select(-row_id)
 #write.csv(data_final,"Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names = F)
+
+
+# Urbanicity ----
+library(OutbreakExtractR)
+sf::sf_use_s2(FALSE)
+pre_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+  mutate(study_year_tl = lubridate::year(eff_tl),
+         study_year_tr = lubridate::year(eff_tr)) %>% 
+  filter(new_admin != 'supranational') %>%  # only add to subantional and national
+  filter_final_analysis_dataset(
+    ., criteria = list(expr(study_year_tl > 1961))
+  ) %>% 
+  distinct(
+    lctn_pr,
+    eff_country,
+    study_year_tl
+  ) %>% 
+  mutate(
+    pop = NA,
+    area_per_1km2 = NA,
+    rural_urban = NA
+  )
+
+total_shp <- readRDS("Data/shapefiles/location_shapefiles.rds")
+for (row_idx in 1:nrow(pre_data)) {
+  lp_id = pre_data$lctn_pr[row_idx]
+  year_tmp = ifelse(pre_data$study_year_tl[row_idx] < 2000, 2000, pre_data$study_year_tl[row_idx])
+  eff_country <- pre_data$eff_country[row_idx]
+  
+  country_shp <- geodata::gadm(country = eff_country, level = 0, path = tempdir()) %>% 
+    sf::st_as_sf() %>% 
+    filter(GID_0 == eff_country)
+  
+  pop <- get_pop(
+    shp = total_shp[total_shp$lctn_pr==lp_id,],
+    year = year_tmp,
+    country = eff_country,
+    country_shp = country_shp,
+    pop_raster_path = "Data/world_pop"
+  ) 
+  
+  if(pre_data$study_year_tl[row_idx] < 2000){
+    pre_2000_pop <- WPP2022 %>% filter(ISO3_code == eff_country & Time == pre_data$study_year_tl[row_idx]) %>% pull(PopTotal)
+    pop_2000 <- WPP2022 %>% filter(ISO3_code == eff_country & Time == 2000) %>% pull(PopTotal)
+    
+   pop <- pop * pre_2000_pop / pop_2000
+   
+  }
+
+  area_per_1km2 <- as.numeric(sf::st_area(total_shp[total_shp$lctn_pr==lp_id,]$geometry)/1000/1000)
+  
+  rural_urban <- ifelse(
+    pop/area_per_1km2 >= 1000,
+    "urban",'rural'
+  )
+  
+  pre_data$pop[row_idx] = pop
+  pre_data$area_per_1km2[row_idx] = area_per_1km2
+  pre_data$rural_urban[row_idx] = rural_urban
+  
+  cat(glue::glue("{year_tmp} is done for {lp_id}"))
+}
+
+processed_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>% 
+  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+  mutate(study_year_tl = lubridate::year(eff_tl))%>% 
+  left_join(
+    pre_data, by = c('eff_country',"study_year_tl","lctn_pr")
+  ) %>% 
+  select(!study_year_tl)
+#write.csv(processed_data,"Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv",row.names = F)

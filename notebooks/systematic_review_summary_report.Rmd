@@ -7,7 +7,7 @@ output:
     toc_depth: 2
     number_sections: true
 params:
-  data_path: "Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv"
+  data_path: "generated_data/processed_estimate_data.rds"
   who_data_path: "Data/endemicity/who_annual_report.csv"
   location_file_path: "Data/endemicity/country_location_id_name.csv"
 ---
@@ -23,23 +23,9 @@ library(gt)
 library(survey)
 
 # Load the dataset from the file path
-data <- readr::read_csv(here::here(params$data_path)) %>% 
-  mutate(
-    admin_level = case_when(
-      new_admin == "supranational" ~ "regional",
-      TRUE ~ new_admin
-    )
-  ) %>% 
-  add_continent("eff_country") %>% 
-  mutate(
-    exp_class =factor(exp_class, levels = c("precipitation","temperature","flood","drought"))
-  ) %>% 
-  mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>%
+data <- readRDS(here::here(params$data_path)) %>% 
   mutate(study_year_tl = lubridate::year(eff_tl),
-         study_year_tr = lubridate::year(eff_tr)) %>% 
-  filter_final_analysis_dataset(
-    ., criteria = list(expr(study_year_tl > 1961))
-  ) # remove papers/estimates before 7th pandemic
+         study_year_tr = lubridate::year(eff_tr))
 ```
 
 # Exposure summary
@@ -405,19 +391,10 @@ spatial_scale_tbl %>%
 ```{r}
 case_class <- data %>%
   distinct(studykey, out_class_case_presentation) %>%
-  mutate(case_type = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>%
-  count(case_type, name = "n_studies")
+  count(out_class_case_presentation, name = "n_studies")
 
 case_class %>%
-  rename(`Case Type` = case_type, `Number of Studies` = n_studies) %>%
+  rename(`Case Type` = out_class_case_presentation, `Number of Studies` = n_studies) %>%
   gt() %>%
   tab_header(title = "Study Population by Case Type") %>%
   fmt_number(columns = `Number of Studies`, decimals = 0)
@@ -428,23 +405,14 @@ case_class %>%
 ## Study population summary by exposure
 ```{r}
 case_class_tbl <- data %>%
-  distinct(studykey, out_class_case_presentation,exp_class) %>%
-  mutate(case_type = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>% 
-  count(case_type, exp_class) %>%
+  distinct(studykey, out_class_case_presentation, exp_class) %>% 
+  count(out_class_case_presentation, exp_class) %>%
   pivot_wider(
     names_from = exp_class,
     values_from = n,
     values_fill = 0
   ) %>% 
-  rename("Case type" = case_type)
+  rename("Case type" = out_class_case_presentation)
 
 case_class_tbl %>%
   gt() %>%
@@ -456,22 +424,13 @@ case_class_tbl %>%
 ```{r}
 case_class_tbl <- data %>%
   distinct(studykey, out_class_case_presentation,out_class_metric) %>%
-  mutate(case_type = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>% 
-  count(case_type, out_class_metric) %>%
+  count(out_class_case_presentation, out_class_metric) %>%
   pivot_wider(
     names_from = out_class_metric,
     values_from = n,
     values_fill = 0
   ) %>% 
-  rename("Case type" = case_type)
+  rename("Case type" = out_class_case_presentation)
 
 case_class_tbl %>%
   gt() %>%
@@ -482,23 +441,14 @@ case_class_tbl %>%
 ## Study population summary by continent
 ```{r}
 case_class_tbl <- data %>%
-  distinct(studykey, out_class_case_presentation,continent) %>%
-  mutate(case_type = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>% 
-  count(case_type, continent) %>%
+  distinct(studykey, out_class_case_presentation,continent) %>% 
+  count(out_class_case_presentation, continent) %>%
   pivot_wider(
     names_from = continent,
     values_from = n,
     values_fill = 0
   ) %>% 
-  rename("Case type" = case_type)
+  rename("Case type" = out_class_case_presentation)
 
 case_class_tbl %>%
   gt() %>%
@@ -512,8 +462,7 @@ stats_all <- generate_summary_stats(data)
 
 # Add scores to dataframe
 data_scores <- data %>% 
-  make_scores() %>% 
-  mutate(hq_score = ifelse(tot_score == 11, "complete-score", "imperfect-score"))
+  get_study_scores()
 
 stats_by_continent <- map(
   unique(data$continent), 
@@ -530,7 +479,7 @@ stats_by_score <- map(
   function(x) {
     data_scores %>% 
       filter(hq_score == x) %>% 
-      generate_summary_stats()
+      generate_summary_stats(regenerate_score = F)
   }
 ) %>% 
   magrittr::set_names(unique(data_scores$hq_score))
@@ -545,15 +494,15 @@ stats_all$quality_summary_by_exp %>%
   group_by(exp_class) %>% 
   summarize(
     `Mean (IQR)` = paste0(
-      round(mean(avg_tot_score_est, na.rm = TRUE), 2), 
+      round(mean(min_tot_score_est, na.rm = TRUE), 2), 
       " (", 
-      quantile(avg_tot_score_est, 0.25, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.25, na.rm = TRUE), 
       "-", 
-      quantile(avg_tot_score_est, 0.75, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.75, na.rm = TRUE), 
       ")"
     ),
-    Min = as.character(round(min(avg_tot_score_est),2)),
-    Max = as.character(round(max(avg_tot_score_est),2)),
+    Min = as.character(round(min(min_tot_score_est),2)),
+    Max = as.character(round(max(min_tot_score_est),2)),
     .groups = "drop"
   ) %>%
   pivot_longer(cols = -exp_class, names_to = "Metric", values_to = "Value") %>%
@@ -568,15 +517,15 @@ stats_all$quality_summary_by_out %>%
   group_by(out_class_metric) %>% 
   summarize(
     `Mean (IQR)` = paste0(
-      round(mean(avg_tot_score_est, na.rm = TRUE), 2), 
+      round(mean(min_tot_score_est, na.rm = TRUE), 2), 
       " (", 
-      quantile(avg_tot_score_est, 0.25, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.25, na.rm = TRUE), 
       "-", 
-      quantile(avg_tot_score_est, 0.75, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.75, na.rm = TRUE), 
       ")"
     ),
-    Min = as.character(round(min(avg_tot_score_est),2)),
-    Max = as.character(round(max(avg_tot_score_est),2)),
+    Min = as.character(round(min(min_tot_score_est),2)),
+    Max = as.character(round(max(min_tot_score_est),2)),
     .groups = "drop"
   ) %>%
   pivot_longer(cols = -out_class_metric, names_to = "Metric", values_to = "Value") %>%
@@ -591,15 +540,15 @@ stats_all$quality_summary_by_cont %>%
   group_by(continent) %>% 
   summarize(
     `Mean (IQR)` = paste0(
-      round(mean(avg_tot_score_est, na.rm = TRUE), 2), 
+      round(mean(min_tot_score_est, na.rm = TRUE), 2), 
       " (", 
-      quantile(avg_tot_score_est, 0.25, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.25, na.rm = TRUE), 
       "-", 
-      quantile(avg_tot_score_est, 0.75, na.rm = TRUE), 
+      quantile(min_tot_score_est, 0.75, na.rm = TRUE), 
       ")"
     ),
-    Min = as.character(round(min(avg_tot_score_est),2)),
-    Max = as.character(round(max(avg_tot_score_est),2)),
+    Min = as.character(round(min(min_tot_score_est),2)),
+    Max = as.character(round(max(min_tot_score_est),2)),
     .groups = "drop"
   ) %>%
   pivot_longer(cols = -continent, names_to = "Metric", values_to = "Value") %>%
@@ -614,9 +563,9 @@ stats_all$quality_summary_by_cont %>%
 score_summary_by_exp <- stats_all$quality_summary_by_exp %>%
   mutate(
     score_range = case_when(
-      avg_tot_score_est == 11 ~ "Score = 11",
-      avg_tot_score_est == 5 ~ "Score = 5",
-      avg_tot_score_est >5 & avg_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 11 ~ "Score = 11",
+      min_tot_score_est == 5 ~ "Score = 5",
+      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
     )
   ) %>%
   group_by(exp_class, score_range) %>%
@@ -636,9 +585,9 @@ score_summary_by_exp %>%
 score_summary_by_out <- stats_all$quality_summary_by_out %>%
   mutate(
     score_range = case_when(
-      avg_tot_score_est == 11 ~ "Score = 11",
-      avg_tot_score_est == 5 ~ "Score = 5",
-      avg_tot_score_est >5 & avg_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 11 ~ "Score = 11",
+      min_tot_score_est == 5 ~ "Score = 5",
+      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
     )
   ) %>%
   group_by(out_class_metric, score_range) %>%
@@ -658,9 +607,9 @@ score_summary_by_out %>%
 score_summary_by_cont <- stats_all$quality_summary_by_cont %>%
   mutate(
     score_range = case_when(
-      avg_tot_score_est == 11 ~ "Score = 11",
-      avg_tot_score_est == 5 ~ "Score = 5",
-      avg_tot_score_est >5 & avg_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 11 ~ "Score = 11",
+      min_tot_score_est == 5 ~ "Score = 5",
+      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
     )
   ) %>%
   group_by(continent, score_range) %>%
@@ -767,39 +716,6 @@ print_vote_table_scores(stats_by_score = stats_by_score,
 
 # Table 1
 ```{r}
-data <- data %>%
-  mutate(duration = as.numeric(eff_tr - eff_tl)) %>%
-  mutate(study_duration = case_when(
-    duration <= 366 ~ "<1 year",
-    duration <= 366*2 ~ "1-2 years",
-    duration <= 366*5 ~ "2-5 years",
-    duration <= 366*10 ~ "5-10 years",
-    TRUE ~ ">10 years"
-  )) %>% 
-  mutate(new_out_class_case_presentation = case_when(
-    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
-    out_class_case_presentation == "suspected cases only" ~ "Suspected",
-    out_class_case_presentation == "deaths" ~ "Deaths",
-    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
-    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
-    out_class_case_presentation == "not stated" ~ "Unknown",
-    TRUE ~ "Mixed"
-  )) %>% 
-  mutate(
-    sig_report = case_when(
-      a_uncert_def == "not stated" ~ FALSE,
-      TRUE ~ TRUE
-    )
-  ) %>% 
-  mutate(out_temp_scale = factor(out_temp_scale,
-                                 levels = c(0, 1, 2, 3, 4, 99),
-                                 labels = c("0 day",
-                                            "1-14 days",
-                                            "15-30 days",
-                                            "31-365 days",
-                                            ">365 days",
-                                            "missing")))
-
 # Helper function: generate summary table with Total column
 make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("Overall","by exp"),  exp_class_order = c("precipitation", "temperature", "flood","drought","Overall")
 ) {
@@ -1143,7 +1059,7 @@ make_summary_table1(data = data, "out_temp_scale", "Category")
 
 ### Table 1. Case definition
 ```{r}
-make_summary_table1(data = data, "new_out_class_case_presentation", "Category") 
+make_summary_table1(data = data, "out_class_case_presentation", "Category") 
 ```
 
 ## Table 1. Statistical methods
@@ -1187,75 +1103,57 @@ make_summary_table1(data = data %>% group_by(studykey) %>%
 ## Table 1. Study quality
 ```{r}
 # Study Quality
-data <- data %>%
-  mutate(
-    exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
-    exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
-    exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
-    out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
-    out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
-    out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
-    out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
-    a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
-    a_class_tf = ifelse(a_effect == "not stated", 0, 1),
-    a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
-    a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
-    tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
-      out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-      a_class_tf + a_adjusted_tf + a_uncert_def_tf,
-    exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
-    out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
-    a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
-  )
+data <- data %>% 
+  get_study_scores()
 
 study_avg_score <- data %>%
   group_by(studykey,exp_class) %>%
-  summarize(avg_tot_score_est = mean(tot_score, na.rm = TRUE),
-            avg_out_score_est = mean(out_tot_score, na.rm = TRUE),
-            avg_exp_score_est = mean(exp_tot_score, na.rm = TRUE),
-            avg_a_score_est = mean(a_tot_score, na.rm = TRUE), .groups = "drop") %>%
+  summarize(min_tot_score_est = mean(min_tot_score_est, na.rm = TRUE),
+            min_exp_tot_score_est = mean(min_exp_tot_score_est, na.rm = TRUE),
+            min_out_tot_score_est = mean(min_out_tot_score_est, na.rm = TRUE),
+            min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
-    avg_tot_score_est = case_when(
-      avg_tot_score_est == 11 ~ "11",
-      avg_tot_score_est <= 5 ~ "≤ 5",
-      avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+    min_tot_score_est = case_when(
+      min_tot_score_est == 11 ~ "11",
+      min_tot_score_est <= 5 ~ "≤ 5",
+      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
     ),
-    avg_out_score_est = case_when(
-      avg_out_score_est == 4 ~ "4",
+    min_out_tot_score_est = case_when(
+      min_out_tot_score_est == 4 ~ "4",
       TRUE ~ "<4"
     ),
-    avg_exp_score_est = case_when(
-      avg_exp_score_est == 3 ~ "3",
+    min_exp_tot_score_est = case_when(
+      min_exp_tot_score_est == 3 ~ "3",
       TRUE ~ "<3"
     ),
-    avg_a_score_est = case_when(
-      avg_a_score_est == 4 ~ "4",
+    min_a_tot_score_est = case_when(
+      min_a_tot_score_est == 4 ~ "4",
       TRUE ~ "<4"
     ),
   )
 
 study_avg_score_total <- data %>%
   group_by(studykey) %>%
-  summarize(avg_tot_score_est = mean(tot_score, na.rm = TRUE),
-            avg_out_score_est = mean(out_tot_score, na.rm = TRUE),
-            avg_exp_score_est = mean(exp_tot_score, na.rm = TRUE),
-            avg_a_score_est = mean(a_tot_score, na.rm = TRUE), .groups = "drop") %>%
+  summarize(min_tot_score_est = mean(min_tot_score_est, na.rm = TRUE),
+            min_exp_tot_score_est = mean(min_exp_tot_score_est, na.rm = TRUE),
+            min_out_tot_score_est = mean(min_out_tot_score_est, na.rm = TRUE),
+            min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
-    avg_tot_score_est = case_when(
-      avg_tot_score_est == 11 ~ "11",
-      avg_tot_score_est <= 5 ~ "≤ 5",
-      avg_tot_score_est > 5 & avg_tot_score_est < 11 ~ "6-10"
+    min_tot_score_est = case_when(
+      min_tot_score_est == 11 ~ "11",
+      min_tot_score_est <= 5 ~ "≤ 5",
+      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
     ),
-    avg_out_score_est = case_when(
-      avg_out_score_est == 4 ~ "4",
+    min_out_tot_score_est = case_when(
+      min_out_tot_score_est == 4 ~ "4",
       TRUE ~ "<4"
     ),
-    avg_exp_score_est = case_when(
-      avg_exp_score_est == 3 ~ "3",
+    min_exp_tot_score_est = case_when(
+      min_exp_tot_score_est == 3 ~ "3",
       TRUE ~ "<3"
     ),
-    avg_a_score_est = case_when(
-      avg_a_score_est == 4 ~ "4",
+    min_a_tot_score_est = case_when(
+      min_a_tot_score_est == 4 ~ "4",
       TRUE ~ "<4"
     ),
   )
@@ -1264,26 +1162,26 @@ study_avg_score_total <- data %>%
 
 ### Table 1. Overall score (max=11)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
-make_summary_table1(data =study_avg_score_total, "avg_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
+make_summary_table1(data =study_avg_score, "min_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "min_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Outcome-related score (max=4)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_out_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
-make_summary_table1(data =study_avg_score_total, "avg_out_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
+make_summary_table1(data =study_avg_score, "min_out_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
+make_summary_table1(data =study_avg_score_total, "min_out_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Exposure-related score (max=3)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_exp_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
-make_summary_table1(data =study_avg_score_total, "avg_exp_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
+make_summary_table1(data =study_avg_score, "min_exp_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "min_exp_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ### Table 1. Association-related score (max=4)
 ```{r}
-make_summary_table1(data =study_avg_score, "avg_a_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
-make_summary_table1(data =study_avg_score_total, "avg_a_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
+make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
+make_summary_table1(data =study_avg_score_total, "min_a_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
 ## Other statistics reported in the manuscript

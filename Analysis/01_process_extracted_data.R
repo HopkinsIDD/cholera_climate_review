@@ -6,6 +6,8 @@ library(tidyverse)
 library(here)
 library(optparse)
 library(patchwork)
+library(lubridate)
+library(purrr)
 
 source("Analysis/utils.R")
 
@@ -28,11 +30,35 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
   read_csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv") %>%
   # Fix dates
   mutate(across(c("eff_tl", "eff_tr"), ~ char_to_date(.) %>% as.Date())) %>% 
+  # Filter out estimates before 7th pandemic 
+  filter_final_analysis_dataset(
+    ., criteria = list(expr(year(eff_tl) > 1961))
+  ) %>% 
   # Unpack countries for multi-country studies
   mutate(country_list = map(eff_country, ~ str_split(., pattern = "\\|")[[1]])) %>% 
+  # Fix case definition 
+  mutate(out_class_case_presentation = case_when(
+    out_class_case_presentation == "bacteriologically confirmed cases only" ~ "Confirmed",
+    out_class_case_presentation == "suspected cases only" ~ "Suspected",
+    out_class_case_presentation == "deaths" ~ "Deaths",
+    # out_class_case_presentation == "sero-incidence infections and bacteriologically confirmed cases" ~ "Sero-incidence and Confirmed cases",
+    # out_class_case_presentation == "sero-incidence infections, bacteriologically confirmed cases and suspected cases" ~ "Sero-incidence and Confirmed and Suspected cases",
+    out_class_case_presentation == "not stated" ~ "Unknown",
+    TRUE ~ "Mixed"
+  )) %>% 
+  # Add new categorical variable for duration 
+  mutate(duration = as.numeric(eff_tr - eff_tl)) %>%
+  mutate(study_duration = case_when(
+    duration <= 366 ~ "<1 year",
+    duration <= 366*2 ~ "1-2 years",
+    duration <= 366*5 ~ "2-5 years",
+    duration <= 366*10 ~ "5-10 years",
+    TRUE ~ ">10 years"
+  )) %>% 
   # Fix estimates
   mutate(across(c("a_effect", "a_uncert_lb", "a_uncert_ub"), ~ as.numeric(.))) %>% 
   # Fix classes of estimates
+  mutate(a_class_backup = a_class) %>% 
   mutate(a_class = case_when(str_detect(a_raw, "correlation") ~ "correlation",
                              a_class == "correlation" & !str_detect(a_class, "correlation") ~ "other",
                              TRUE ~ a_class),
@@ -79,14 +105,17 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     a_class = case_when(a_class == "ratio" ~ "log10_ratio",
                         TRUE ~ a_class)
   ) %>% 
+  mutate(
+    a_class = a_class_backup
+  ) %>% 
+  select(!a_class_backup) %>% 
   # Spatial scales
   mutate(
-    admin_level = case_when(eff_admin == "adm0" ~ "national", 
-                            str_detect(eff_admin, "[1-4]") ~ "sub-national",
-                            str_detect(eff_country, "\\|") | str_detect(eff_country, "multi") ~ "regional",
-                            TRUE ~ "sub-national"),
+    admin_level = case_when(new_admin == "supranational" ~ "regional",
+                            new_admin == "subnational" ~ "sub-national",
+                            TRUE ~ new_admin),
     admin_level = factor(admin_level, 
-                         levels = c("regional", "national", "sub-national", "other")),
+                         levels = c("regional", "national", "sub-national")),
   ) %>% 
   # Add continent
   add_continent(country_col = "eff_country") %>% 
@@ -109,16 +138,19 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
                           levels = c("out_of_rainy_season", "mixed", "in_rainy_season"), 
                           labels = c("out of season", "both", "in season")),
     # Define urba/rural
-    urban_rural_class = factor(urban_rural_class, 
+    rural_urban = factor(rural_urban, 
                                levels = c("rural", "mixed", "urban")),
     continent = factor(continent),
     # Levels of uncertainty
     a_uncert_significant = factor(a_uncert_significant, 
                                   levels = c("TRUE", "FALSE", "NA"),
                                   labels = c("TRUE", "FALSE", "unspecified")),
+    sig_report = case_when(
+      a_uncert_def == "not stated" ~ FALSE,
+      TRUE ~ TRUE
+    ),
     # Levels of temporal scale
     out_temp_scale = factor(get_out_tempscale_dict()[as.character(out_temp_scale)], levels = get_out_tempscale_dict()),
-    out_temp_scale = if_else(out_temp_scale == "missing", NA, out_temp_scale),
     # Define categories of pct years with cholera
     pct_years_cholera_cat = cut(mean_percent_year_with_cases, c(0, 50, 95, Inf), include.lowest = T, right = FALSE) %>% 
       factor(levels = c("[0,50)", "[50,95)", "[95,Inf]"),
@@ -254,25 +286,33 @@ if (opt$do_plots) {
 
 # Compute scores ----------------------------------------------------------
 
-scores <- est_data[,colnames(est_data) %in% c("studykey","eff_country","exp_class","exp_temp_scale","exp_spatial_scale","exp_source","out_class_metric","out_class_case_presentation","out_medicattended","out_temp_scale","out_spatial_scale","case_def_raw","exp_out_spatial_scale_match","a_effect","a_adjusted","a_uncert_def")] %>% 
-  mutate(
-    exp_temp_tf = ifelse(exp_temp_scale == 99,0,1),
-    exp_spatial_tf = ifelse(exp_spatial_scale == "not stated",0,1),
-    exp_source_tf = ifelse(exp_source == "not stated",0,1),
-    out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated",0,1),
-    out_temp_tf = ifelse(out_temp_scale == 99,0,1),
-    out_spatial_tf = ifelse(out_spatial_scale == "not stated",0,1),
-    out_case_df_tf = ifelse(case_def_raw == "not stated",0,1),
-    a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown",0,1),
-    a_class_tf = ifelse(a_effect == "not stated",0,1),
-    a_adjusted_tf = ifelse(a_adjusted == "not stated",0,1),
-    a_uncert_def_tf = ifelse(a_uncert_def == "not stated",0,1)
-    
-  ) %>% 
-  mutate(
-    tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
-  ) 
+# scores <- est_data[,colnames(est_data) %in% c("studykey","eff_country","exp_class","exp_temp_scale","exp_spatial_scale","exp_source","out_class_metric","out_class_case_presentation","out_medicattended","out_temp_scale","out_spatial_scale","case_def_raw","exp_out_spatial_scale_match","a_effect","a_adjusted","a_uncert_def")] %>% 
+#   mutate(
+#     exp_temp_tf = ifelse(exp_temp_scale == 99,0,1),
+#     exp_spatial_tf = ifelse(exp_spatial_scale == "not stated",0,1),
+#     exp_source_tf = ifelse(exp_source == "not stated",0,1),
+#     out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated",0,1),
+#     out_temp_tf = ifelse(out_temp_scale == 99,0,1),
+#     out_spatial_tf = ifelse(out_spatial_scale == "not stated",0,1),
+#     out_case_df_tf = ifelse(case_def_raw == "not stated",0,1),
+#     a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown",0,1),
+#     a_class_tf = ifelse(a_effect == "not stated",0,1),
+#     a_adjusted_tf = ifelse(a_adjusted == "not stated",0,1),
+#     a_uncert_def_tf = ifelse(a_uncert_def == "not stated",0,1)
+#     
+#   ) %>% 
+#   mutate(
+#     tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
+#   ) 
 
+scores <- est_data %>%
+  make_scores() %>%
+  select(studykey, eff_country, 
+         exp_class, exp_temp_scale, exp_spatial_scale, exp_source, 
+         out_class_metric, out_class_case_presentation, out_medicattended, out_temp_scale, out_spatial_scale, case_def_raw,
+         exp_out_spatial_scale_match, 
+         a_effect, a_adjusted, a_uncert_def, 
+         names(.)[str_detect(names(.), "_tf|tot_score")])
 
 # Save
 saveRDS(scores, file = "generated_data/paper_scores.rds")

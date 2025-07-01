@@ -316,8 +316,45 @@ make_scores <- function(df) {
       a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
       tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
         out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-        a_class_tf + a_adjusted_tf + a_uncert_def_tf
+        a_class_tf + a_adjusted_tf + a_uncert_def_tf,
+      exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
+      out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
+      a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
     )
+}
+
+get_study_scores <- function(df,study_id_var = "studykey") {
+  tot_score_df <- df %>% 
+    make_scores() %>% 
+    group_by(!!sym(study_id_var), exp_class, out_class_metric) %>%
+    summarize(min_tot_score_est = min(tot_score)) %>% 
+    ungroup()
+  
+  exp_tot_score_df <- df %>% 
+    make_scores() %>% 
+    group_by(!!sym(study_id_var), exp_class, out_class_metric) %>%
+    summarize(min_exp_tot_score_est = min(exp_tot_score)) %>% 
+    ungroup()
+  
+  out_tot_score_df <- df %>% 
+    make_scores() %>% 
+    group_by(!!sym(study_id_var), exp_class, out_class_metric) %>%
+    summarize(min_out_tot_score_est = min(out_tot_score)) %>% 
+    ungroup()
+  
+  a_tot_score_df <- df %>% 
+    make_scores() %>% 
+    group_by(!!sym(study_id_var), exp_class, out_class_metric) %>%
+    summarize(min_a_tot_score_est = min(a_tot_score)) %>% 
+    ungroup()
+
+  df %>%
+    left_join(tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
+    left_join(exp_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
+    left_join(out_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
+    left_join(a_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
+    mutate(hq_score = ifelse(min_tot_score_est == 11, "complete-score", "imperfect-score"))
+  
 }
 
 #' @name generate_summary_stats
@@ -329,16 +366,20 @@ make_scores <- function(df) {
 #' @param outcomes the exposure over which the statistics are summarized (the default is NULL meaning across all outcome groups)
 #' @param direction_var the column name for the direction of the effect in the data
 #' @param study_id_var the column name for the unique identifier for the study in the data
+#' @param regenerate_score whether to regenerate study-level scores
 generate_summary_stats <- function(data,
                                    exposures = NULL,
                                    outcomes = NULL,
                                    direction_var = "a_direction",
-                                   study_id_var = "studykey") {
+                                   study_id_var = "studykey",
+                                   regenerate_score = TRUE) {
   
   # 0. Calculate the quality score as tot_score
-  data <- data %>%
-    make_scores()
-  
+  if(regenerate_score){
+    data <- data %>%
+      get_study_scores()
+  }
+
   # 1. Location-time product per study
   location_time <- data %>% mutate(year = substr(eff_tl, 1, 4)) %>% group_by(!!sym(study_id_var)) %>%
     summarise(unique_location_time_comb = n_distinct(eff_loc) * n_distinct(year)) %>%
@@ -349,40 +390,24 @@ generate_summary_stats <- function(data,
     count(exp_class, name = "n_studies")
   
   # 3. Quality summary by exposure class
-  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
-                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
-                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
-                    "a_adjusted", "a_uncert_def")
-  quality_summary_by_exp <- data %>% distinct(!!sym(study_id_var), exp_class, tot_score) %>%
-    group_by(!!sym(study_id_var), exp_class) %>% 
-    summarize(avg_tot_score_est = mean(tot_score))%>% 
+  quality_summary_by_exp <- data %>% 
+    distinct(!!sym(study_id_var), exp_class,out_class_metric, min_tot_score_est) %>% 
     ungroup() %>% 
-    count(exp_class, avg_tot_score_est, name = "n_studies")
-  
+    count(exp_class, min_tot_score_est, name = "n_studies")
+
   # 4. Quality summary by outcome class
-  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
-                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
-                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
-                    "a_adjusted", "a_uncert_def")
-  quality_summary_by_out <- data %>% distinct(!!sym(study_id_var), out_class_metric, tot_score) %>%
-    group_by(!!sym(study_id_var), out_class_metric) %>% 
-    summarize(avg_tot_score_est = mean(tot_score))%>% 
-    ungroup() %>% 
-    count(out_class_metric, avg_tot_score_est, name = "n_studies")
+  quality_summary_by_out <- data %>% 
+    distinct(!!sym(study_id_var), out_class_metric, min_tot_score_est) %>% 
+    count(out_class_metric, min_tot_score_est, name = "n_studies")
   
   # 5. Quality summary by continent class
-  quality_vars <- c("exp_temp_scale", "exp_spatial_scale", "exp_source",
-                    "out_class_case_presentation", "out_temp_scale", "out_spatial_scale",
-                    "case_def_raw", "exp_out_spatial_scale_match", "a_effect",
-                    "a_adjusted", "a_uncert_def")
-  quality_summary_by_cont <- data %>% distinct(!!sym(study_id_var), continent, tot_score) %>%
-    group_by(!!sym(study_id_var), continent) %>% 
-    summarize(avg_tot_score_est = mean(tot_score))%>% 
-    ungroup() %>% 
-    count(continent, avg_tot_score_est, name = "n_studies")
+  quality_summary_by_cont <- data %>% 
+    distinct(!!sym(study_id_var), continent, min_tot_score_est) %>% 
+    count(continent, min_tot_score_est, name = "n_studies")
   
   # 6. Direction of effect by quality score
-  direction_by_quality <- data %>% count(tot_score, !!sym(direction_var)) %>%
+  direction_by_quality <- data %>% 
+    count(min_tot_score_est, !!sym(direction_var)) %>%
     pivot_wider(names_from = !!sym(direction_var), values_from = n, values_fill = 0)
   
   # If exposure / outcome is specified in the parameter:
@@ -1018,6 +1043,7 @@ compose_effdir_plot <- function(data,
   )
   
   # Read images and compose
+  library(magick)
   plots <- map(
     get_all_exp_class(),
     function(x) {
