@@ -1318,6 +1318,23 @@ get_effect_sizes <- function(res_files) {
   }) 
 }
 
+
+get_i_squared <- function(res_files) {
+  map_df(res_files, function(x) {
+    
+    # Read stan fit and data
+    stan_fit <- readRDS(x)
+    
+    # Information on run (exposure, outcome, stratification)
+    run_info <- get_run_info(x)
+    
+    # Get draw summaries and add info
+    stan_fit$summary("i_squared") %>% 
+      select(variable, mean, q5, q95) %>% 
+      bind_cols(run_info)
+  }) 
+}
+
 # get_ref_cat_dict <- function() {
 #   c(
 #     "1 week" = "1 week",

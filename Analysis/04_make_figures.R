@@ -297,7 +297,7 @@ fig2_v2 <- (fig2a + timeline_plot2 + hist_top2) +
     ")
 
 ggsave(fig2_v2, filename = "figures/figure_2_v2.png",
-       width = 15, height = 10, dpi = 300)
+       width = 16.5, height = 11, dpi = 300)
 
 # Figure 3: direction of effect -------------------------------------------
 
@@ -308,7 +308,7 @@ compose_effdir_plot(data = dir_data,
 
 # Figure 4: meta-regression -----------------------------------------------
 
-# Load results
+# Load 
 res_files <- dir("generated_data/", pattern = "stan_genquant", full.names = T) %>%
   # Get new runs with full set of covariates
   str_subset("strat") %>%
@@ -429,7 +429,7 @@ figS1 <- ggplot() +
     expand = FALSE
   )
 
-ggsave('Figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
@@ -525,7 +525,7 @@ map_endemicity <- ggplot() +
 figS2 <- map_hdi / map_climate / map_inland / map_endemicity +
   plot_layout(ncol = 1)
 
-ggsave('Figures/figS2_new.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
+ggsave('figures/figS2_new.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
 
 ## Figure S3. Histogram of time period duration and median by continent ----
 plot_data_binned <- plot_data %>%
@@ -563,7 +563,7 @@ figS3 <- ggplot() +
     plot.title = element_text(face = "bold", hjust = 0)
   )
 
-ggsave('Figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
+ggsave('figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
 
 ## Figure S4. Histogram of time period duration and median by country ----
 plot_data_country <- plot_data %>% 
@@ -610,7 +610,7 @@ figS4 <- ggplot(plot_data_country) +
   ) +
   facet_wrap(~eff_country)
 
-ggsave('Figures/figS4_new.png',plot=figS4,width = 16, height = 16, dpi = 300, bg = "white")
+ggsave('figures/figS4_new.png',plot=figS4,width = 16, height = 16, dpi = 300, bg = "white")
 
 ## Figure S5. Tile plot by study for each exposure variable ----
 quality_data <- plot_data %>%
@@ -720,7 +720,7 @@ figS5 <- ggplot(plot_long, aes(x = variable_label, y = studykey, fill = factor(i
   )
 
 
-ggsave('Figures/figS5_new.png',plot=figS5,width = 12, height = 16, dpi = 300, bg = "white")
+ggsave('figures/figS5_new.png',plot=figS5,width = 12, height = 16, dpi = 300, bg = "white")
 
 ## Figure S6-S8: effect size stratification by continent, climate and endemicity ----
 
@@ -779,6 +779,23 @@ ggplot(summary, aes(x = percent_year_with_cases)) +
   ) +
   theme_bw()
 
+## ICC for all fits ----
+
+# Load 
+fit_files <- dir("generated_data/", pattern = "stan_genquant", full.names = T) %>%
+  # Get new runs with full set of covariates
+  str_subset("strat") %>%
+  str_subset("direction") %>% 
+  str_subset("none")
+
+
+
+get_i_squared(fit_files) %>% 
+  ggplot(aes(x = exp_class, y = mean)) +
+  geom_errorbar(aes(ymin = q5, ymax = q95), width = 0) +
+  geom_point() + 
+  facet_grid(. ~ out_class) +
+  theme_bw()
 
 # Scraps ------------------------------------------------------------------
 
