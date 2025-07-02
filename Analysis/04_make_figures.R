@@ -298,8 +298,8 @@ fig4 <- es_effect_dir %>%
   filter(stratification == "none") %>% 
   ggplot(aes(x = strata, y = mean)) +
   geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
-  geom_point(aes(color = exp_class, pch = out_class), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = exp_class, lty = out_class), 
+  geom_point(aes(pch = out_class, color = out_class), position = pd) +
+  geom_errorbar(aes(ymin = q5, ymax = q95, color = out_class, lty = out_class), 
                 position = pd, width = 0) +
   ggh4x::facet_nested(exp_class ~ covar_type + what, scales = "free_x", space = "free_x") +
   theme_bw() +
@@ -311,7 +311,7 @@ fig4 <- es_effect_dir %>%
     y = "odds ratio of positive direction of association", 
     shape = "Outcome type",
     lty = "Outcome type",
-    color = "Exposure variable"
+    color = "Outcome type"
   ) +
   theme(
     strip.text.x = element_text(size = 6)

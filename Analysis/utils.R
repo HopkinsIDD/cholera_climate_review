@@ -996,7 +996,7 @@ plot_spatial_distribution_map <- function(plot_data,
             aes(pch = admin_level_simple), color = "white", size = .5) +
     scale_fill_manual(values = colors_WHO_case_report(), na.value = "gray95") +
     scale_linetype_manual(values = c(1, 2), name = "spatial resolution") +
-    scale_size_continuous(breaks = c(1, 2, 3, 4, 5), name = "# studies", range = c(1, 5)) +
+    scale_size_continuous(breaks = c(1, 3, 5), name = "# studies", range = c(1, 5)) +
     scale_shape_manual(values = c(19, 17)) +
     scale_alpha_manual(values = c(1, .6)) +
     scale_color_viridis_c(name = "# studies", 
@@ -1005,12 +1005,15 @@ plot_spatial_distribution_map <- function(plot_data,
                           option = "D") +
     # https://stackoverflow.com/questions/50118741/ggplot2-colorbar-with-discontinuous-jump-for-skewed-data
     guides(
-      color = guide_colorbar(title.position = "top"),
-      alpha = guide_legend(title = "finest spatial resolution"),
-      shape = guide_legend(title = "finest spatial resolution"),
-      linetype = guide_legend(title = "finest spatial resolution"),
-      fill = guide_legend(title = "cholera frequency\nin 2000-2023"),
-      size = guide_legend(title = "# studies at national\nor sub-national level")
+      color = guide_colorbar(title.position = "top", 
+                             direction = "horizontal", order = 2),
+      alpha = guide_legend(title = "finest spatial resolution", order = 1),
+      shape = guide_legend(title = "finest spatial resolution", order = 1),
+      linetype = guide_legend(title = "finest spatial resolution", order = 1),
+      fill = guide_legend(title = "cholera frequency\nin 2000-2023", order = 4),
+      size = guide_legend(title = "# studies at national\nor sub-national level", 
+                          title.position = "top",
+                          direction = "horizontal", order = 3)
     ) +
     # scale_color_viridis_c(option = "C", name = "Years Excedding\n10 Cases (2000-2020)") +  # Option C
     coord_sf(xlim = c(st_bbox(data_shp)["xmin"], st_bbox(data_shp)["xmax"]),
