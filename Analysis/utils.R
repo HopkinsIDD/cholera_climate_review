@@ -721,6 +721,10 @@ colors_continent <- function() {
   colors
 }
 
+colors_WHO_case_report <- function() {
+  c("gray95", "gray80", "gray60", "gray40")
+}
+
 #' get_stratification_colors
 #' Colors for stratified plots of effect sizes
 #' @return
@@ -731,7 +735,8 @@ get_stratification_colors <- function(stratification) {
   } else if (stratification == "continent") {
     colors_continent()
   } else if (stratification == "pct_years_cholera_cat") {
-    c("#752D00", "#E85D00", "#C29500")
+    colors_WHO_case_report()[-1]
+    # c("#752D00", "#E85D00", "#C29500")
   }
 }
 
@@ -939,7 +944,7 @@ plot_spatial_distribution_map <- function(plot_data,
   }
   
   # Get sf object of world
-  world_sf <- get_world_sf()
+  world_sf_combined <- get_world_sf()
   
   who_freq <- who_data %>% 
     group_by(country) %>% 
@@ -977,11 +982,23 @@ plot_spatial_distribution_map <- function(plot_data,
               mutate(coverage = if_else(admin_level_simple != "regional", "national or sub-national", "regional")), 
             alpha = 0, aes(lty = coverage, color = n_studies), lwd = .3) +
     geom_sf(data = subregional_sf, aes(color = n_studies), alpha = 0, lwd = .5) +
-    geom_sf(data = st_centroid(subregional_sf), aes(color = n_studies, size = n_studies)) +
-    geom_sf(data = st_centroid(subregional_sf), color = "white", size = .5) +
-    scale_fill_manual(values = c("gray95", "gray80", "gray60", "gray40"), na.value = "gray95") +
+    geom_sf(data = subregional_sf %>% filter(shapeISO == "BGD"), 
+            aes(color = n_studies), alpha = 0, lwd = .5) +
+    geom_sf(data = st_centroid(subregional_sf %>% filter(shapeISO != "BGD")), 
+            aes(color = n_studies, size = n_studies, pch = admin_level_simple, alpha = admin_level_simple)) +
+    geom_sf(data = st_centroid(subregional_sf %>% filter(shapeISO == "BGD")), 
+            aes(color = n_studies, pch = admin_level_simple, alpha = admin_level_simple), size = 8) +
+    geom_sf(data = st_centroid(subregional_sf), 
+            aes(pch = admin_level_simple, alpha = admin_level_simple), color = "white", size = .5) +
+    geom_sf(data = st_centroid(regional_sf %>% filter(!(shapeISO %in% subregional_sf$shapeISO))), 
+            aes(color = n_studies, size = n_studies, pch = admin_level_simple, alpha = admin_level_simple)) +
+    geom_sf(data = st_centroid(regional_sf %>% filter(!(shapeISO %in% subregional_sf$shapeISO))), 
+            aes(pch = admin_level_simple), color = "white", size = .5) +
+    scale_fill_manual(values = colors_WHO_case_report(), na.value = "gray95") +
     scale_linetype_manual(values = c(1, 2), name = "spatial resolution") +
-    scale_size_continuous(breaks = c(1, 3, 5, 16), name = "# studies") +
+    scale_size_continuous(breaks = c(1, 2, 3, 4, 5), name = "# studies", range = c(1, 5)) +
+    scale_shape_manual(values = c(19, 17)) +
+    scale_alpha_manual(values = c(1, .6)) +
     scale_color_viridis_c(name = "# studies", 
                           na.value = "darkorange",
                           limits = c(1, 5), 
@@ -989,6 +1006,9 @@ plot_spatial_distribution_map <- function(plot_data,
     # https://stackoverflow.com/questions/50118741/ggplot2-colorbar-with-discontinuous-jump-for-skewed-data
     guides(
       color = guide_colorbar(title.position = "top"),
+      alpha = guide_legend(title = "finest spatial resolution"),
+      shape = guide_legend(title = "finest spatial resolution"),
+      linetype = guide_legend(title = "finest spatial resolution"),
       fill = guide_legend(title = "cholera frequency\nin 2000-2023"),
       size = guide_legend(title = "# studies at national\nor sub-national level")
     ) +
