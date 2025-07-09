@@ -63,18 +63,14 @@ plot_data <- readRDS("generated_data/processed_estimate_data.rds") %>%
   mutate(admin_level_simple = if_else(admin_level == "regional", "regional", "national or sub-national"))
 
 
-fig2a <- plot_spatial_distribution_map(plot_data = plot_data,
-                                       country_col = "eff_country",
-                                       who_data = get_WHO_case_data(),
-                                       group_col = "admin_level_simple",
-                                       )
+fig2a <- plot_spatial_distribution_map(
+  plot_data = plot_data,
+  country_col = "eff_country",
+  who_data = get_WHO_case_data(),
+  group_col = "admin_level_simple",
+)
 
 ## Fig 2b Temporal ----
-# continent_colors <- c(
-#   "Africa" = "#FFA378",
-#   "Asia" = "#A8B545",
-#   "Other" = "#8C796D"
-# )
 
 # Make the plot
 timeline_plot <- ggplot(plot_data %>% arrange(year_tl)) +
@@ -195,8 +191,8 @@ fig2_combined <- plot_grid(
   rel_widths = c(1, 0.08)
 )
 
-ggsave(filename = "figures/fig2.png", fig2_combined,
-       width = 18, height = 10, dpi = 300, bg = "white")
+# ggsave(filename = "figures/fig2.png", fig2_combined,
+#        width = 18, height = 10, dpi = 300, bg = "white")
 
 
 ## Second pass figure 2 ----
@@ -213,7 +209,7 @@ timeline_plot2 <- timeline_plot +
   theme(panel.grid.minor = element_blank()) +
   ggtitle("Temporal distribution of studies") +
   guides(color = "none")
-  
+
 
 hist_top2 <- ggplot(
   plot_data %>%
@@ -272,7 +268,7 @@ fig2_v2 <- (fig2a + timeline_plot2 + hist_top2) +
     ")
 
 ggsave(fig2_v2, filename = "figures/figure_2_v2.png",
-       width = 15, height = 10, dpi = 300)
+       width = 16.5, height = 11, dpi = 300)
 
 # Figure 3: direction of effect -------------------------------------------
 
@@ -283,7 +279,7 @@ compose_effdir_plot(data = dir_data,
 
 # Figure 4: meta-regression -----------------------------------------------
 
-# Load results
+# Load 
 res_files <- dir("generated_data/", pattern = "stan_genquant", full.names = T) %>%
   # Get new runs with full set of covariates
   str_subset("strat") %>%
@@ -302,8 +298,8 @@ fig4 <- es_effect_dir %>%
   filter(stratification == "none") %>% 
   ggplot(aes(x = strata, y = mean)) +
   geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
-  geom_point(aes(color = exp_class, pch = out_class), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = exp_class, lty = out_class), 
+  geom_point(aes(pch = out_class, color = out_class), position = pd) +
+  geom_errorbar(aes(ymin = q5, ymax = q95, color = out_class, lty = out_class), 
                 position = pd, width = 0) +
   ggh4x::facet_nested(exp_class ~ covar_type + what, scales = "free_x", space = "free_x") +
   theme_bw() +
@@ -315,7 +311,7 @@ fig4 <- es_effect_dir %>%
     y = "odds ratio of positive direction of association", 
     shape = "Outcome type",
     lty = "Outcome type",
-    color = "Exposure variable"
+    color = "Outcome type"
   ) +
   theme(
     strip.text.x = element_text(size = 6)
@@ -404,7 +400,7 @@ figS1 <- ggplot() +
     expand = FALSE
   )
 
-ggsave('Figures/figS1.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
@@ -507,7 +503,7 @@ map_endemicity <- ggplot(data = external_sf) +
 figS2 <- map_hdi / map_climate / map_inland / map_endemicity +
   plot_layout(ncol = 1)
 
-ggsave('Figures/figS2.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
+ggsave('figures/figS2.png',plot=figS2,width = 12, height = 12, dpi = 300, bg = "white")
 
 ## Figure S3. Histogram of time period duration and median by continent ----
 plot_data_binned <- plot_data %>%
@@ -519,15 +515,32 @@ plot_data_summary <- plot_data_binned %>%
   group_by(continent, bin_midpoint) %>%
   summarise(n = n(), .groups = "drop")
 
+plot_data_country <- plot_data %>% 
+  group_by(studykey,eff_country,continent) %>%
+  summarise(duration_days = mean(duration_days)) %>% # average study duration at the study level
+  separate_rows(eff_country, sep = "\\|") %>%
+  filter(!is.na(duration_days), duration_days > 0)
+
+duration_medians_continent <- plot_data_country %>%
+  group_by(continent) %>% 
+  summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
+  mutate(line_label = "Median duration")
+
+duration_medians <- plot_data_country %>%
+  group_by(eff_country) %>% 
+  summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
+  mutate(line_label = "Median duration")
+
+
 figS3 <- ggplot() +
   geom_col(data = plot_data_summary,
            aes(x = bin_midpoint, y = n, fill = continent, color = continent),
            position = position_dodge(width = 4.5), width = 4) +  # spacing control
-  geom_vline(data = duration_medians, 
+  geom_vline(data = duration_medians_continent, 
              aes(xintercept = median_duration / 365, color = continent, linetype = line_label),
              linewidth = 0.8) +
-  scale_fill_manual(values = continent_colors) +
-  scale_color_manual(values = continent_colors) +
+  scale_fill_manual(values = colors_continent()) +
+  scale_color_manual(values = colors_continent()) +
   scale_linetype_manual(values = c("Median duration" = "dashed")) +
   scale_x_continuous(
     name = "Study Duration (years, grouped every 5 years)",
@@ -545,19 +558,9 @@ figS3 <- ggplot() +
     plot.title = element_text(face = "bold", hjust = 0)
   )
 
-ggsave('Figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
+ggsave('figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
 
 ## Figure S4. Histogram of time period duration and median by country ----
-plot_data_country <- plot_data %>% 
-  group_by(studykey,eff_country,continent) %>%
-  summarise(duration_days = mean(duration_days)) %>% # average study duration at the study level
-  separate_rows(eff_country, sep = "\\|") %>%
-  filter(!is.na(duration_days), duration_days > 0)
-
-duration_medians <- plot_data_country %>%
-  group_by(eff_country) %>% 
-  summarise(median_duration = median(duration_days, na.rm = TRUE)) %>%
-  mutate(line_label = "Median duration")
 
 figS4 <- ggplot(plot_data_country) +
   geom_histogram(aes(x = duration_days/365,fill = continent), 
@@ -586,7 +589,7 @@ figS4 <- ggplot(plot_data_country) +
   ) +
   facet_wrap(~eff_country)
 
-ggsave('Figures/figS4.png',plot=figS4,width = 14, height = 8, dpi = 300, bg = "white")
+ggsave('figures/figS4.png',plot=figS4,width = 16, height = 16, dpi = 300, bg = "white")
 
 ## Figure S5. Tile plot by study for each exposure variable ----
 quality_data <- plot_data %>%
@@ -692,11 +695,13 @@ figS5_other3 <- ggplot(plot_long %>% filter(exp_class != "precipitation"), aes(x
     strip.text = element_text(face = "bold")
   )
 
+
 figS5 <- (figS5_prep / figS5_other3) +
   plot_layout(ncol = 2, guides = "collect") +
   plot_annotation(tag_levels = "a")
 
-ggsave('Figures/figS5.png',plot=figS5,width = 10, height = 12, dpi = 300, bg = "white")
+ggsave('figures/figS5.png',plot=figS5,width = 10, height = 12, dpi = 300, bg = "white")
+
 
 ## Figure S6-S8: effect size stratification by continent, climate and endemicity ----
 
@@ -708,16 +713,17 @@ walk(
     p_strat <- es_effect_dir %>% 
       filter(stratification == x) %>% 
       ggplot(aes(x = strata, y = mean)) +
-      geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
-      geom_point(aes(color = level, pch = out_class), position = pd) +
+      geom_hline(aes(yintercept = 1), lwd = .3, lty = 3) +
       geom_errorbar(aes(ymin = q5, ymax = q95, color = level, lty = out_class), 
-                    position = pd, width = 0, alpha = .8) +
+                    position = pd, width = 0, alpha = .8, lwd = .3) +
+      geom_point(aes(fill = level), pch = 21, color = "black", position = pd, stroke = .2) +
       ggh4x::facet_nested(out_class + exp_class ~ covar_type + what, scales = "free_x", space = "free_x") +
       theme_bw() +
       scale_linetype_manual(values = c(1, 6)) +
       scale_color_manual(values = get_stratification_colors(stratification = x)) +
+      scale_fill_manual(values = get_stratification_colors(stratification = x)) +
       labs(y = "odds ratio", color = get_covar_dict()[x]) +
-      guides(lty = "none", shape = "none") +
+      guides(shape = "none") +
       scale_y_continuous(limits = c(0, 4))+
       theme(
         strip.text.x = element_text(size = 6),
@@ -755,6 +761,23 @@ ggplot(summary, aes(x = percent_year_with_cases)) +
   ) +
   theme_bw()
 
+## ICC for all fits ----
+
+# Load 
+fit_files <- dir("generated_data/", pattern = "stan_genquant", full.names = T) %>%
+  # Get new runs with full set of covariates
+  str_subset("strat") %>%
+  str_subset("direction") %>% 
+  str_subset("none")
+
+
+
+get_i_squared(fit_files) %>% 
+  ggplot(aes(x = exp_class, y = mean)) +
+  geom_errorbar(aes(ymin = q5, ymax = q95), width = 0) +
+  geom_point() + 
+  facet_grid(. ~ out_class) +
+  theme_bw()
 
 # Scraps ------------------------------------------------------------------
 

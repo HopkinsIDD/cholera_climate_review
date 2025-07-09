@@ -5,6 +5,9 @@
 library(tidyverse)
 library(here)
 library(optparse)
+library(furrr)
+
+plan(multisession, workers = 10)
 
 source("Analysis/utils.R")
 
@@ -17,11 +20,11 @@ option_list <- list(
   make_option(c("-o", "--out_class"), 
               default = "incidence", action ="store", type = "character", help = "Make intermediate plots."),
   make_option(c("-l", "--level"), 
-              default = "[0,50)", action ="store", type = "character", help = "Stratification level"),
+              default = "all", action ="store", type = "character", help = "Stratification level"),
   make_option(c("-s", "--stratification"), 
-              default = "pct_years_cholera_cat", action ="store", type = "character", help = "Stratification column"),
+              default = "none", action ="store", type = "character", help = "Stratification column"),
   make_option(c("-r", "--redo"), 
-              default = FALSE, action = "store", type = "logical", help = "Redo fit")
+              default = TRUE, action = "store", type = "logical", help = "Redo fit")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -171,7 +174,7 @@ missing_covar_ends <- cumsum(X_comb_mat_sizes)
 X_missing <- reduce(X_missing_covar_combs, rbind)
 
 # Prior is equal probability between classes. Can make this different later.
-prob_missing_covar_combs <- map(ind_missing, function(i) {
+prob_missing_covar_combs <- future_map(ind_missing, function(i) {
   
   miss <- get_missing_covars(X, i)
   X_combs <- make_covar_combs(covar = miss, data = data)
@@ -204,11 +207,11 @@ X[is.na(X)] <- 0
 covars <- as.character(eq) %>% str_split("\\+") %>% .[[2]] %>% str_trim()
 
 # Define the matrix of all possible covariate combinations
-all_u_covar <- map(covars,
-                   function(x) {
-                     unique(est_data[[x]]) %>% 
-                       .[!is.na(.)]
-                   }) %>% 
+all_u_covar <- future_map(covars,
+                          function(x) {
+                            unique(est_data[[x]]) %>% 
+                              .[!is.na(.)]
+                          }) %>% 
   set_names(covars) %>% 
   expand.grid() %>% 
   as_tibble()
@@ -217,7 +220,7 @@ all_u_covar <- map(covars,
 u_covar_mat <- model.matrix(data = all_u_covar, eq) %>% 
   unique()
 
-poststrat_matrices <- map(c("all", covars), function(x){
+poststrat_matrices <- future_map(c("all", covars), function(x){
   getPostStratMatrix(variable = x,
                      u_covar_mat = u_covar_mat,
                      u_covar_df = all_u_covar,

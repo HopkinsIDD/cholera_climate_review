@@ -140,6 +140,7 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     # Define urba/rural
     rural_urban = factor(rural_urban, 
                                levels = c("rural", "mixed", "urban")),
+    urban_rural_class = rural_urban,
     continent = factor(continent),
     # Levels of uncertainty
     a_uncert_significant = factor(a_uncert_significant, 
