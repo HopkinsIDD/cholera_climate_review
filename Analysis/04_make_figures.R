@@ -382,7 +382,7 @@ shapefiles_tagged$spatial_scale <- factor(
 # if a region contains both national and subnational level data, show the subnational data.
 bbox <- sf::st_bbox(shapefiles_tagged)
 
-figS1 <- ggplot() +
+figS1 <- ggplot(data = shapefiles_tagged) +
   geom_sf(data = world, fill = "grey95", color = "grey70", size = 0.1) +
   geom_sf(data = shapefiles_tagged, aes(fill = spatial_scale),color = "grey70", size = 0.1) +
   scale_fill_manual(
@@ -398,9 +398,10 @@ figS1 <- ggplot() +
     xlim = c(bbox["xmin"], bbox["xmax"]),
     ylim = c(bbox["ymin"], bbox["ymax"]),
     expand = FALSE
-  )
+  )+
+  facet_grid(~spatial_scale)
 
-ggsave('figures/figS1_new.png',plot=figS1,width = 10, height = 8, dpi = 300, bg = "white")
+ggsave('figures/figS1.png',plot=figS1,width = 10, height = 4, dpi = 300, bg = "white")
 
 ## Figure S2.Spatial distribution of extracted covariates ----
 shapefiles <- readRDS("Data/shapefiles/location_shapefiles.rds")
@@ -555,7 +556,13 @@ figS3 <- ggplot() +
   theme_bw() +
   theme(
     legend.position = "right",
-    plot.title = element_text(face = "bold", hjust = 0)
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10), 
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10)
   )
 
 ggsave('figures/figS3.png',plot=figS3,width = 12, height = 6, dpi = 300, bg = "white")
@@ -571,7 +578,7 @@ figS4 <- ggplot(plot_data_country) +
   scale_linetype_manual(values = c("Median duration" = "dashed")) +
   scale_fill_manual(values = colors_continent()) +
   scale_x_continuous(
-    name = "Average Study Duration (years)",
+    name = "Study Duration (years)",
     breaks = seq(0, max(plot_data$duration_days, na.rm = TRUE)/365, by = 5)
   ) +
   labs(
@@ -585,7 +592,13 @@ figS4 <- ggplot(plot_data_country) +
   theme(
     legend.position = "right",
     plot.title = element_text(face = "bold", hjust = 0),
-    strip.text = element_text(size = 8)
+    strip.text = element_text(size = 10),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10)
   ) +
   facet_wrap(~eff_country)
 
