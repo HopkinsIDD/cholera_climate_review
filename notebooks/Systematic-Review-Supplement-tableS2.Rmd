@@ -31,7 +31,6 @@ data <- readRDS(here::here(params$data_path)) %>%
 
 # Table 1
 ```{r}
-# Helper function: generate summary table with Total column
 make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("Overall","by exp"),  exp_class_order = c("precipitation", "temperature", "flood","drought","Overall")
 ) {
   if(c("by exp") %in% output_cols){
@@ -98,40 +97,70 @@ make_summary_table1(data = data, "continent", "Category")
 
 ### Table 1. Study country
 ```{r}
-get_country_count <- function(data, ctn = "other", ctn_col = "continent") {
+get_AFRO_region <- function(data, ctry_col) {
+  
+  data_with_AFRO_region <- data %>% 
+    dplyr::mutate(
+      AFRO_region = dplyr::case_when(
+        !!rlang::sym(ctry_col) %in% c("BDI","ETH","KEN","MDG","RWA","SDN","SSD","UGA","TZA","ERI","","DJI","SOM","SDN") ~ "Eastern Africa",
+        !!rlang::sym(ctry_col) %in% c("BWA","MOZ","MWI","NAM","SWZ","ZMB","ZWE","ZAF","LSO") ~ "Southern Africa",
+        !!rlang::sym(ctry_col) %in% c("AGO","CMR","CAF","TCD","COG","COD","GNQ","GAN","GAB") ~ "Central Africa",
+        !!rlang::sym(ctry_col) %in% c("BEN","BFA","CIV","GHA","GIN","GNB","GMB","LBR","MLI","MRT","NER","NGA","SEN","SLE","TGO","DJI","SOM","SDN") ~ "Western Africa",
+        !!rlang::sym(ctry_col) %in% c("DZA","MAR","TUN","LBY") ~ "Northern Africa"
+    ))
+  
+  return(data_with_AFRO_region)
+}
+
+get_country_count <- function(data, ctn = "africa", ctn_col = "continent") {
   library(dplyr)
   library(tidyr)
   library(stringr)
   library(survey)
   library(gtsummary)
 
-  # Clean input and split country codes
   clean_data <- data %>%
-    mutate(across(all_of(c(ctn_col, "eff_country")), ~tolower(trimws(.)))) %>%
+    mutate(across(all_of(c(ctn_col#, "eff_country"
+                           )), ~tolower(trimws(.)))) %>%
     separate_rows(eff_country, sep = "\\|") %>%
     distinct(studykey, !!sym(ctn_col), eff_country)
 
-  # Filter for the selected continent
   continent_data <- clean_data %>%
     filter(!!sym(ctn_col) == tolower(ctn))
-
-  # Count unique studies per individual country
+  
+  if(ctn == "africa"){
+  summary_data <- continent_data %>%
+    get_AFRO_region(., ctry_col = "eff_country") %>% 
+    group_by(AFRO_region) %>%
+    summarise(n = n_distinct(studykey), .groups = "drop") %>% 
+    mutate(continent = ctn)
+  } else {
   summary_data <- continent_data %>%
     group_by(eff_country) %>%
-    summarise(n = n_distinct(studykey), .groups = "drop") %>%
+    summarise(n = n_distinct(studykey), .groups = "drop")  %>%
     mutate(continent = ctn) %>%
     relocate(continent)
+   
+  }
 
-  # Total number of unique studies in the continent
   total_n <- continent_data %>%
     pull(studykey) %>%
     unique() %>%
     length()
 
-  # Create survey design
   survey_design <- svydesign(ids = ~1, data = summary_data, weights = ~n)
 
-  # Generate table
+  if(ctn == "africa"){
+   tbl <- tbl_svysummary(
+    survey_design,
+    by = "continent",
+    include = "AFRO_region",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+    modify_caption(glue::glue("**Summary Table for Continent (overall): {str_to_title(ctn)}**"))
+   
+  } else {
   tbl <- tbl_svysummary(
     survey_design,
     by = "continent",
@@ -140,8 +169,8 @@ get_country_count <- function(data, ctn = "other", ctn_col = "continent") {
     missing = "no"
   ) %>%
     modify_caption(glue::glue("**Summary Table for Continent (overall): {str_to_title(ctn)}**"))
+  }
 
-  # Add overall row
   overall_row <- tibble(
     variable = "eff_country",
     group = NA,
@@ -157,24 +186,33 @@ get_country_count <- function(data, ctn = "other", ctn_col = "continent") {
   return(final_tbl)
 }
 
-get_country_count_by_exp <- function(data, ctn = "other", ctn_col = "continent") {
+get_country_count_by_exp <- function(data, ctn = "africa", ctn_col = "continent") {
   library(dplyr)
   library(tidyr)
   library(stringr)
   library(survey)
   library(gtsummary)
-  
+
   clean_data <- data %>%
-    mutate(across(all_of(c(ctn_col, "eff_country", "exp_class")), ~tolower(trimws(.)))) %>%
+    mutate(across(all_of(c(ctn_col, #"eff_country", 
+                           "exp_class")), ~tolower(trimws(.)))) %>%
     separate_rows(eff_country, sep = "\\|") %>%
     distinct(studykey, !!sym(ctn_col), eff_country, exp_class)
   
   continent_data <- clean_data %>%
     filter(!!sym(ctn_col) == tolower(ctn))
   
+  if(ctn == "africa"){
+  summary_data <- continent_data %>%
+    get_AFRO_region(., ctry_col = "eff_country") %>% 
+    group_by(AFRO_region, exp_class) %>%
+    summarise(n = n_distinct(studykey), .groups = "drop")
+  } else {
   summary_data <- continent_data %>%
     group_by(eff_country, exp_class) %>%
     summarise(n = n_distinct(studykey), .groups = "drop")
+   
+  }
   
   total_n <- continent_data %>%
     group_by(exp_class) %>%
@@ -183,7 +221,19 @@ get_country_count_by_exp <- function(data, ctn = "other", ctn_col = "continent")
   
   survey_design <- svydesign(ids = ~1, data = summary_data, weights = ~n)
   
-  tbl <- tbl_svysummary(
+  if(ctn == "africa"){
+    tbl <- tbl_svysummary(
+    survey_design,
+    by = "exp_class",
+    include = "AFRO_region",
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "no",
+    percent = "column"
+  ) %>%
+    modify_caption(glue::glue("**Summary Table of Country Counts by Exposure Class in {str_to_title(ctn)}**"))
+   
+  } else{
+    tbl <- tbl_svysummary(
     survey_design,
     by = "exp_class",
     include = "eff_country",
@@ -193,6 +243,8 @@ get_country_count_by_exp <- function(data, ctn = "other", ctn_col = "continent")
   ) %>%
     modify_caption(glue::glue("**Summary Table of Country Counts by Exposure Class in {str_to_title(ctn)}**"))
   
+
+  }
   n_cols <- length(unique(summary_data$exp_class))
   stat_cols <- paste0("stat_", seq_len(n_cols))
   
@@ -210,22 +262,22 @@ get_country_count_by_exp <- function(data, ctn = "other", ctn_col = "continent")
 ```
 
 ```{r}
-get_country_count(data = data,ctn = "other")
+get_country_count(data = data,ctn = "africa")
 ```
 
 ```{r}
-get_country_count_by_exp(data = data,ctn = "other")
+get_country_count_by_exp(data = data,ctn = "africa")
 ```
 
 
 ### Table 1. Study spatial scale
 ```{r}
-make_summary_table1(data = data  %>% filter(continent == "Other"), "admin_level", "Category")
+make_summary_table1(data = data  %>% filter(continent == "Africa"), "admin_level", "Category")
 ```
 
 ### Table 1. Study period
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other"), "study_duration", "Category")
+make_summary_table1(data = data %>% filter(continent == "Africa"), "study_duration", "Category")
 ```
 ### Table 1. % of years with WHO reported cases 
 ```{r}
@@ -241,7 +293,7 @@ who_data<-read.csv(here::here(params$who_data_path)) %>%
   select(country,suspected_cases,year)
 
 summary_tbl <- identify_endemicity(
-  processed_data = data %>% filter(continent == "Other"),
+  processed_data = data %>% filter(continent == "Africa"),
   who_data = who_data,
   group_col = 'exp_class'
 ) %>%
@@ -265,7 +317,7 @@ summary_tbl %>%
 ```
 ```{r}
 summary_tbl <- identify_endemicity(
-  processed_data = data %>% filter(continent == "Other"),
+  processed_data = data %>% filter(continent == "Africa"),
   who_data = who_data,
   group_col = NULL
 ) %>%
@@ -291,28 +343,28 @@ summary_tbl %>%
 ## Table 1. Outcome characteristics
 ### Table 1. Outcome type
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other"), "out_class_metric", "Category")
+make_summary_table1(data = data %>% filter(continent == "Africa"), "out_class_metric", "Category")
 ```
 
 ### Table 1. Temporal resolution of outcome
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other"), "out_temp_scale", "Category")
+make_summary_table1(data = data %>% filter(continent == "Africa"), "out_temp_scale", "Category")
 ```
 
 ### Table 1. Case definition
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other"), "out_class_case_presentation", "Category") 
+make_summary_table1(data = data %>% filter(continent == "Africa"), "out_class_case_presentation", "Category") 
 ```
 
 ## Table 1. Statistical methods
 ### Table 1. Measurement of association effect
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other"), "a_class", "Category")
+make_summary_table1(data = data %>% filter(continent == "Africa"), "a_class", "Category")
 ```
 
 ### Table 1. Any reported uncertainty
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Other") %>% 
+make_summary_table1(data = data %>% filter(continent == "Africa") %>% 
                       group_by(studykey,exp_class) %>% 
                       summarize(study_report_sig = case_when(
                         any(sig_report) ~ "TRUE",
@@ -321,7 +373,7 @@ make_summary_table1(data = data %>% filter(continent == "Other") %>%
                       ungroup(), "study_report_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 
 data_filtered <- data %>%
-  filter(continent == "Other") %>%
+  filter(continent == "Africa") %>%
   group_by(studykey) %>%
   summarize(study_report_sig = case_when(
     any(sig_report) ~ "TRUE",
@@ -347,13 +399,13 @@ make_summary_table1(
 
 ### Table 1. Any model adjustment
 ```{r}
-make_summary_table1(data = data  %>% filter(continent == "Other") %>% group_by(studykey,exp_class) %>% 
+make_summary_table1(data = data  %>% filter(continent == "Africa") %>% group_by(studykey,exp_class) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
                         a_adjusted == "not stated" ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
                       ungroup(), "study_adj_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
-make_summary_table1(data = data %>% filter(continent == "Other") %>% group_by(studykey) %>% 
+make_summary_table1(data = data %>% filter(continent == "Africa") %>% group_by(studykey) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
                         any(a_adjusted %in% "not stated") ~ "Missing",
@@ -364,7 +416,7 @@ make_summary_table1(data = data %>% filter(continent == "Other") %>% group_by(st
 ## Table 1. Study quality
 ```{r}
 # Study Quality
-data <- data  %>% filter(continent == "Other") %>% 
+data <- data  %>% filter(continent == "Africa") %>% 
   get_study_scores()
 
 study_avg_score <- data %>%
