@@ -292,6 +292,9 @@ es_effect_dir <- get_effect_sizes(res_files) %>%
            factor(levels = c("contextual factors", "analytical approach")))
 
 
+# Save
+saveRDS(es_effect_dir, file = "generated_data/metareg_effect_sizes.rds")
+
 pd <- position_dodge(width = .5)
 
 fig4 <- es_effect_dir %>% 
@@ -299,7 +302,7 @@ fig4 <- es_effect_dir %>%
   ggplot(aes(x = strata, y = mean)) +
   geom_hline(aes(yintercept = 1), lwd = .3, lty = 2) +
   geom_point(aes(pch = out_class, color = out_class), position = pd) +
-  geom_errorbar(aes(ymin = q5, ymax = q95, color = out_class, lty = out_class), 
+  geom_errorbar(aes(ymin = q2.5, ymax = q97.5, color = out_class, lty = out_class), 
                 position = pd, width = 0) +
   ggh4x::facet_nested(exp_class ~ covar_type + what, scales = "free_x", space = "free_x") +
   theme_bw() +

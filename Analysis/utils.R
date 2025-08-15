@@ -991,7 +991,7 @@ plot_spatial_distribution_map <- function(plot_data,
     geom_sf(data = st_centroid(subregional_sf), 
             aes(pch = admin_level_simple, alpha = admin_level_simple), color = "white", size = .5) +
     geom_sf(data = st_centroid(regional_sf %>% filter(!(shapeISO %in% subregional_sf$shapeISO))), 
-            aes(color = n_studies, size = n_studies, pch = admin_level_simple, alpha = admin_level_simple)) +
+            aes(color = n_studies, pch = admin_level_simple, alpha = admin_level_simple)) +
     geom_sf(data = st_centroid(regional_sf %>% filter(!(shapeISO %in% subregional_sf$shapeISO))), 
             aes(pch = admin_level_simple), color = "white", size = .5) +
     scale_fill_manual(values = colors_WHO_case_report(), na.value = "gray95") +
@@ -1349,7 +1349,7 @@ get_effect_sizes <- function(res_files) {
     }
     
     # Get draw summaries and add info
-    stan_fit$summary("eff_size") %>%
+    stan_fit$summary("eff_size", mean, ~posterior::quantile2(.x, probs = c(0.025, 0.05, 0.95, 0.975))) %>%
       mutate(var = colnames(stan_data$X),
              what = str_extract(var, get_all_covar_patterns()),
              strata = str_remove(var, what),
@@ -1362,7 +1362,7 @@ get_effect_sizes <- function(res_files) {
         w <- get_covar_dict()[w]
         str_c(w, "\nref:", ref)
       })) %>% 
-      select(what, strata, mean, q5, q95) %>% 
+      select(what, strata, mean, contains("q")) %>% 
       bind_cols(run_info)
   }) 
 }
