@@ -427,9 +427,10 @@ generate_summary_stats <- function(data,
   
   # 8. Summarize study-level directions
   study_level_dir <- filtered_data %>%
-    group_by(!!sym(study_id_var)) %>%
+    group_by(!!sym(study_id_var), exp_class, out_class_metric) %>%
     summarise_directions(thresh = 0.7) %>%
-    select(!!sym(study_id_var), overall_dir)
+    select(!!sym(study_id_var), exp_class, out_class_metric, overall_dir) %>% 
+    ungroup()
   
   # 9. Vote counting summary using study-level directions
   vote_combos <- expand_grid(
@@ -453,7 +454,10 @@ generate_summary_stats <- function(data,
         )
       } else {
         study_dir_sub <- study_level_dir %>%
-          filter(!!sym(study_id_var) %in% subdata[[study_id_var]])
+          filter(!!sym(study_id_var) %in% subdata[[study_id_var]], 
+                 exp_class == exposure, 
+                 out_class_metric == outcome) %>% 
+          select(!!sym(study_id_var), overall_dir)
         
         vote_counts <- study_dir_sub %>%
           count(overall_dir) %>%
@@ -1478,7 +1482,7 @@ print_vote_table <- function(stats,
 print_vote_table_continents <- function(stats_by_continent, 
                                         this_exposure) {
   
-  map(unique(data$continent), function(continent) {
+  map(levels(data$continent), function(continent) {
     print_vote_table(stats = stats_by_continent[[continent]], 
                      this_exposure = this_exposure) %>%
       tab_header(title = str_glue("Vote Counting Summary for {str_to_title(this_exposure)} and continent:{continent}"))

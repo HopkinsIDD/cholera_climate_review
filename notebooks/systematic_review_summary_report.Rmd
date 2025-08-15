@@ -1204,10 +1204,10 @@ data1 <- data %>%
 africa_data <- data1 %>% filter(continent == "Africa")
 asia_data <- data1 %>% filter(continent == "Asia")
 
-africa_covered <- africa_data %>% filter(admin_level %in% c("national", "subnational")) %>% 
+africa_covered <- africa_data %>% filter(admin_level %in% c("national", "sub-national")) %>% 
   distinct(eff_country) %>% nrow()
 
-asia_covered <- asia_data %>% filter(admin_level %in% c("national", "subnational")) %>% 
+asia_covered <- asia_data %>% filter(admin_level %in% c("national", "sub-national")) %>% 
   distinct(eff_country) %>% nrow()
 
 africa_total <- summary %>% filter(continent == "Africa") %>% pull(total)
@@ -1281,3 +1281,11 @@ es_effect_dir %>%
 
 ```
 
+
+```{r}
+medattd_com_cholera <- data %>% 
+  group_by(out_medicattended) %>% 
+  summarize(n_study = length(unique(studykey)))
+colnames(data)
+cat(sprintf("Almost all studies reported on medically-attended cholera, with only %d reporting on a mix of facility-reported and community-reported cases.",medattd_com_cholera$n_study[2]))
+```
