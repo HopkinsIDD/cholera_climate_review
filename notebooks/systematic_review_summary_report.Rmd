@@ -1,7 +1,7 @@
 ---
 title: "Systematic Review Summary Report"
 output:
-  html_document:
+  bookdown::html_document2:
     toc: true
     toc_float: true
     toc_depth: 2
@@ -46,7 +46,7 @@ studies_with_more_than_one_exposure <- data %>%
 exposure_counts <- data %>%
   distinct(studykey, exp_class) %>%
   count(exp_class, name = "n_studies") %>%
-    add_row(exp_class = ">1 exposure class", n_studies = studies_with_more_than_one_exposure) %>% 
+  add_row(exp_class = ">1 exposure class", n_studies = studies_with_more_than_one_exposure) %>% 
   add_row(exp_class = "Total", n_studies = total_studies)
 
 exposure_counts %>%
@@ -754,7 +754,7 @@ make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("O
     tmp_long <- tmp_long %>%
       mutate(exp_class = factor(exp_class, levels = exp_class_order))
   }
-
+  
   # Create a survey design object to account for weights
   survey_design <- svydesign(ids = ~1, data = tmp_long, weights = ~n)
   
@@ -771,7 +771,7 @@ make_summary_table1 <- function(data, var, rename_var = NULL, output_cols = c("O
   # Round the percentage
   summary_tbl <- summary_tbl %>% 
     mutate(across(contains("%"), ~ceiling(as.numeric(gsub("[^0-9.-]", "", .))), .names = "rounded_{.col}"))
-
+  
   return(as_gtsummary(summary_tbl))
 }
 ```
@@ -788,29 +788,29 @@ get_country_count_by_continent <- function(data, ctn = NULL, ctn_col = "continen
   library(dplyr)
   library(tidyr)
   library(stringr)
-
+  
   clean_data <- data %>%
     mutate(across(all_of(c(ctn_col, "eff_country")), ~tolower(trimws(.)))) %>%
     separate_rows(eff_country, sep = "\\|") %>%
     distinct(studykey, .data[[ctn_col]], eff_country, exp_class) %>%
     rename(continent = !!sym(ctn_col))
-
+  
   if (!is.null(ctn)) {
     clean_data <- clean_data %>%
       filter(continent == tolower(ctn))
   }
-
+  
   top_by_exp <- clean_data %>%
     group_by(exp_class, eff_country) %>%
     summarise(n = n_distinct(studykey), .groups = "drop") %>%
     group_by(exp_class) %>%
     slice_max(order_by = n, n = 1, with_ties = T) %>%
     ungroup()
-
+  
   top_country_grid <- top_by_exp %>%
     distinct(eff_country) %>%
     crossing(exp_class = unique(clean_data$exp_class))
-
+  
   country_counts <- clean_data %>%
     semi_join(top_country_grid, by = "eff_country") %>%
     group_by(eff_country, exp_class) %>%
@@ -818,9 +818,9 @@ get_country_count_by_continent <- function(data, ctn = NULL, ctn_col = "continen
     right_join(top_country_grid, by = c("eff_country", "exp_class")) %>%
     mutate(n_papers = replace_na(n_papers, 0)) %>%
     arrange(eff_country, exp_class)
-
+  
   top_countries <- unique(top_by_exp$eff_country)
-
+  
   others_counts <- clean_data %>%
     filter(!eff_country %in% top_countries) %>%
     group_by(exp_class) %>%
@@ -829,10 +829,10 @@ get_country_count_by_continent <- function(data, ctn = NULL, ctn_col = "continen
       n_papers = n_distinct(studykey),
       .groups = "drop"
     )
-
+  
   country_counts_with_others <- bind_rows(country_counts, others_counts) %>%
     arrange(eff_country, exp_class)
-
+  
   return(country_counts_with_others)
 }
 
@@ -843,17 +843,17 @@ get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ct
   library(stringr)
   library(survey)
   library(gtsummary)
-
+  
   clean_data <- data %>%
     mutate(across(all_of(c(ctn_col, "eff_country")), ~tolower(trimws(.)))) %>%
     separate_rows(eff_country, sep = "\\|") %>%
     distinct(studykey, !!sym(ctn_col), eff_country)
-
+  
   continent_data <- clean_data %>%
     filter(!!sym(ctn_col) == tolower(ctn))
-
+  
   top_countries <- unique(country_continent_by_ctn$eff_country)
-
+  
   country_counts <- continent_data %>%
     filter(eff_country %in% top_countries) %>%
     group_by(eff_country) %>%
@@ -861,13 +861,13 @@ get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ct
       n = n_distinct(studykey),
       .groups = "drop"
     )
-
+  
   other_n <- continent_data %>%
     filter(!eff_country %in% top_countries) %>%
     pull(studykey) %>%
     unique() %>%
     length()
-
+  
   total_n <- continent_data %>%
     pull(studykey) %>%
     unique() %>%
@@ -885,9 +885,9 @@ get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ct
       )
     ) %>%
     relocate(continent)
-
+  
   survey_design <- svydesign(ids = ~1, data = summary_data, weights = ~n)
-
+  
   tbl <- tbl_svysummary(
     survey_design,
     by = "continent",
@@ -896,7 +896,7 @@ get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ct
     missing = "no"
   ) %>%
     modify_caption(glue::glue("**Summary Table for Continent (overall): {str_to_title(ctn)}**"))
-
+  
   # Overall
   overall_row <- tibble(
     variable = "eff_country",
@@ -904,28 +904,28 @@ get_country_count <- function(data, country_continent_by_ctn, ctn = "africa", ct
     label = "Overall",
     stat_1 = as.character(total_n)
   )
-
+  
   tbl_df <- as_tibble(tbl$table_body)
   final_tbl <- tbl %>%
     modify_table_body(
       ~ bind_rows(.x, overall_row)
     )
-
+  
   return(final_tbl)
 }
 ```
 
 ```{r}
 continent_data <- get_country_count_by_continent(data = data,ctn = "africa") %>% 
-    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+  mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
 continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
 tbl_svysummary(
-    continent_survey_design,
-    by = "exp_class",
-    include = "eff_country",
-    statistic = list(all_categorical() ~ "{n} ({p}%)"),
-    missing = "no"
-  ) %>%
+  continent_survey_design,
+  by = "exp_class",
+  include = "eff_country",
+  statistic = list(all_categorical() ~ "{n} ({p}%)"),
+  missing = "no"
+) %>%
   modify_caption(
     "**Summary Table for Continent: Africa**"
   )
@@ -937,15 +937,15 @@ get_country_count(data = data, country_continent_by_ctn = continent_data,ctn = '
 
 ```{r}
 continent_data <- get_country_count_by_continent(data = data,ctn = "asia",ctn_col = 'continent') %>% 
-    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+  mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
 continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
 tbl_svysummary(
-    continent_survey_design,
-    by = "exp_class",
-    include = "eff_country",
-    statistic = list(all_categorical() ~ "{n} ({p}%)"),
-    missing = "no"
-  ) %>%
+  continent_survey_design,
+  by = "exp_class",
+  include = "eff_country",
+  statistic = list(all_categorical() ~ "{n} ({p}%)"),
+  missing = "no"
+) %>%
   modify_caption(
     "**Summary Table for Continent: Asia**"
   )
@@ -957,15 +957,15 @@ get_country_count(data = data, country_continent_by_ctn = continent_data,ctn = '
 
 ```{r}
 continent_data <- get_country_count_by_continent(data = data,ctn = "other",ctn_col = 'continent') %>% 
-    mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
+  mutate(eff_country = factor(eff_country, levels = c(unique(eff_country[eff_country != "Others"]), "Others"))) 
 continent_survey_design <- svydesign(ids = ~1, data = continent_data, weights = ~n_papers)
 tbl_svysummary(
-    continent_survey_design,
-    by = "exp_class",
-    include = "eff_country",
-    statistic = list(all_categorical() ~ "{n} ({p}%)"),
-    missing = "no"
-  ) %>%
+  continent_survey_design,
+  by = "exp_class",
+  include = "eff_country",
+  statistic = list(all_categorical() ~ "{n} ({p}%)"),
+  missing = "no"
+) %>%
   modify_caption(
     "**Summary Table for Continent: Other**"
   )
@@ -1244,3 +1244,40 @@ studies_covering_over_decase <- period_table %>%
 cat(sprintf("The majority of studies covered multiple years (N=%d) and almost half covered more than 10 years (N=%d).",
             studies_covering_multiyears$total, studies_covering_over_decase$total))
 ```
+
+# Results of meta-regression
+```{r eff-size}
+
+library(gt)
+
+# Load effect sizes
+es_effect_dir <- readRDS(here::here("generated_data/metareg_effect_sizes.rds")) %>% 
+  filter(stratification == "none") %>% 
+  mutate(txt = str_c(
+    formatC(mean, digits = 2, format = "f"), 
+    " (",
+    formatC(q2.5, digits = 2, format = "f"), 
+    "-",
+    formatC(q97.5, digits = 2, format = "f"),
+    ")"
+  ),
+  sig = q2.5 > 1 | q97.5 < 1) %>% 
+  arrange(exp_class, out_class, what, strata)
+
+
+es_effect_dir %>% 
+  # mutate(what = str_replace(what, "\\\n", " ")) %>% 
+  mutate(row = row_number(), .by = c(exp_class, out_class, what)) %>%
+  # https://stackoverflow.com/questions/76723656/how-to-collapse-rows-with-the-same-information-in-r-package-gt
+  mutate(across(c(exp_class, out_class, what), ~ifelse(row == 1, ., ""))) %>% 
+  select(exp_class, out_class, what, strata, txt, sig) %>%
+  gt() %>% 
+  data_color(
+    columns = txt,
+    rows = sig,
+    method = "factor",
+    palette = c("red", "gray")
+  )
+
+```
+
