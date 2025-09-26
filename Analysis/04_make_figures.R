@@ -419,13 +419,13 @@ external_sf <- plot_data %>%
   ) %>%
   mutate(
     hdi_cat = case_when(
-      average_hdi >= 0     & average_hdi < 0.55 ~ "0–0.55",
-      average_hdi >= 0.55  & average_hdi < 0.7  ~ "0.55–0.7",
-      average_hdi >= 0.7   & average_hdi < 0.8  ~ "0.7–0.8",
-      average_hdi >= 0.8   & average_hdi <= 1   ~ "0.8–1.0",
+      average_hdi >= 0     & average_hdi < 0.55 ~ "0-0.55",
+      average_hdi >= 0.55  & average_hdi < 0.7  ~ "0.55-0.7",
+      average_hdi >= 0.7   & average_hdi < 0.8  ~ "0.7-0.8",
+      average_hdi >= 0.8   & average_hdi <= 1   ~ "0.8-1.0",
       TRUE ~ NA_character_
     ),
-    hdi_cat = factor(hdi_cat, levels = c("0–0.55", "0.55–0.7", "0.7–0.8", "0.8–1.0"))
+    hdi_cat = factor(hdi_cat, levels = c("0-0.55", "0.55-0.7", "0.7-0.8", "0.8-1.0"))
   ) %>% 
   mutate(endemicity_group = case_when(
     mean_percent_year_with_cases <= 50 ~ "0-50%",
