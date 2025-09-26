@@ -1184,6 +1184,158 @@ make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",outp
 make_summary_table1(data =study_avg_score_total, "min_a_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
+## Table 2. Data quality table (temporarily)
+```{r}
+get_study_scores_by_question <- function(
+  df,
+  study_id_var = "studykey",
+  question_vars = c(
+    "exp_temp_tf", "exp_spatial_tf", "exp_source_tf",
+    "out_class_case_presentation_tf", "out_temp_tf", "out_spatial_tf",
+    "out_case_df_tf", "a_match_tf", "a_class_tf", "a_adjusted_tf",
+    "a_uncert_def_tf"
+  )
+) {
+  by_keys <- c(study_id_var, "exp_class", "out_class_metric")
+
+  scored <- df %>%
+    make_scores()
+
+  out <- scored %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(by_keys))) %>%
+    dplyr::summarize(
+      n_estimates            = dplyr::n(),
+      min_tot_score_est      = min(tot_score, na.rm = TRUE),
+      min_exp_tot_score_est  = min(exp_tot_score, na.rm = TRUE),
+      min_out_tot_score_est  = min(out_tot_score, na.rm = TRUE),
+      min_a_tot_score_est    = min(a_tot_score, na.rm = TRUE),
+      dplyr::across(
+        dplyr::all_of(question_vars),
+        ~ min(as.numeric(.x), na.rm = TRUE),
+        .names = "{.col}_min"
+      ),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      hq_score = dplyr::if_else(min_tot_score_est == 11, "complete-score", "imperfect-score")
+    )
+
+  return(out)
+}
+
+quality_data_by_question <- data %>% get_study_scores_by_question()
+
+make_quality_table <- function(
+  data,
+  question_vars,
+  question_labels = NULL,
+  study_id_var = "studykey",
+  exp_var = "exp_class",
+  out_var = "out_class_metric",
+  exp_class_order = c("precipitation", "temperature", "flood", "drought", "Overall")
+) {
+  
+  per_study_exp <- data %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(study_id_var, exp_var)))) %>%
+    dplyr::summarise(
+      dplyr::across(dplyr::all_of(question_vars), min),
+      .groups = "drop"
+)
+
+  overall_by_exp <- per_study_exp %>%
+    dplyr::distinct(dplyr::across(dplyr::all_of(c(study_id_var, exp_var)))) %>%
+    dplyr::count(!!rlang::sym(exp_var), name = "N_total")
+
+  per_study_overall <- per_study_exp %>%
+      dplyr::group_by(!!rlang::sym(study_id_var)) %>%
+      dplyr::summarise(
+        dplyr::across(dplyr::all_of(question_vars), min),
+        .groups = "drop"
+  )
+
+  total_overall <- per_study_overall %>%
+    dplyr::summarise(N_total = dplyr::n()) %>%
+      dplyr::mutate(!!exp_var := "Overall")
+
+  counts_overall_by_question <- per_study_overall %>%
+    tidyr::pivot_longer(
+        cols = dplyr::all_of(question_vars),
+        names_to = "question",
+        values_to = "val"
+      ) %>%
+    dplyr::group_by(question) %>%
+    dplyr::summarise(n = sum(val == 1, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::mutate(!!exp_var := "Overall")
+
+  counts_by_question_exp <- per_study_exp %>%
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(question_vars),
+      names_to = "question",
+      values_to = "val"
+    ) %>%
+    dplyr::group_by(!!rlang::sym(exp_var), question) %>%
+    dplyr::summarise(n = sum(val == 1, na.rm = TRUE), .groups = "drop")
+
+  denoms <- dplyr::bind_rows(overall_by_exp, total_overall)
+  counts <- dplyr::bind_rows(counts_by_question_exp, counts_overall_by_question)
+
+  counts2 <- counts %>%
+    dplyr::left_join(denoms, by = exp_var) %>%
+    dplyr::mutate(
+      pct = 100 * n / N_total,
+      display = paste0(n, " (", round(pct, 0), "%)")
+    ) %>% 
+    dplyr::mutate(question = dplyr::recode(question, !!!question_labels)) %>% 
+    dplyr::mutate(!!exp_var := factor(.data[[exp_var]], levels = exp_class_order))
+
+  wide <- counts2 %>%
+    tidyr::pivot_wider(
+      id_cols = question,
+      names_from = !!rlang::sym(exp_var),
+      values_from = display
+    ) %>%
+    dplyr::arrange(question)
+
+    for (col in exp_class_order) {
+    wide <- wide[, c("question", exp_class_order[exp_class_order %in% names(wide)])]
+    }
+
+  gt::gt(wide) %>%
+    gt::cols_label(question = "Category") %>%
+    gt::fmt_missing(columns = gt::everything(), missing_text = "0 (0%)")
+}
+
+
+question_vars <- c(
+  "exp_temp_tf_min","exp_spatial_tf_min","exp_source_tf_min",
+  "out_class_case_presentation_tf_min","out_temp_tf_min","out_spatial_tf_min",
+  "out_case_df_tf_min","a_match_tf_min","a_class_tf_min","a_adjusted_tf_min","a_uncert_def_tf_min"
+)
+
+question_labels <- c(
+  exp_temp_tf_min = "Exposure: temporal scale reported",
+  exp_spatial_tf_min = "Exposure: spatial scale reported",
+  exp_source_tf_min = "Exposure: source reported",
+  out_class_case_presentation_tf_min = "Outcome: case presentation reported",
+  out_temp_tf_min = "Outcome: temporal scale reported",
+  out_spatial_tf_min = "Outcome: spatial scale reported",
+  out_case_df_tf_min = "Outcome: case definition reported",
+  a_match_tf_min = "Association: exposure–outcome scales aligned",
+  a_class_tf_min = "Association: effect measure reported",
+  a_adjusted_tf_min = "Association: adjusted for confounders",
+  a_uncert_def_tf_min = "Association: uncertainty/definition reported"
+)
+
+make_quality_table(
+  data = quality_data_by_question,
+  question_vars = question_vars,
+  question_labels = question_labels,
+  exp_class_order = c("precipitation","temperature","flood","drought","Overall")
+)
+
+```
+
+
 ## Other statistics reported in the manuscript
 ```{r}
 summary <- identify_endemicity(
