@@ -294,9 +294,9 @@ study_avg_score <- data %>%
             min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     min_tot_score_est = case_when(
-      min_tot_score_est == 11 ~ "11",
-      min_tot_score_est <= 5 ~ "≤ 5",
-      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
+      min_tot_score_est == 9 ~ "9",
+      min_tot_score_est <= 4 ~ "≤ 4",
+      min_tot_score_est > 4 & min_tot_score_est < 9 ~ "5-8"
     ),
     min_out_tot_score_est = case_when(
       min_out_tot_score_est == 4 ~ "4",
@@ -307,15 +307,15 @@ study_avg_score <- data %>%
       TRUE ~ "<3"
     ),
     min_a_tot_score_est = case_when(
-      min_a_tot_score_est == 4 ~ "4",
-      TRUE ~ "<4"
+      min_a_tot_score_est == 2 ~ "2",
+      TRUE ~ "<2"
     ),
   )
 ```
 
 ### Table 1. Overall score (max=11)
 ```{r}
-make_summary_table1(data =study_avg_score, "min_tot_score_est","Category", expected_levels = c('11','6-10','<=5'))
+make_summary_table1(data =study_avg_score, "min_tot_score_est","Category", expected_levels = c('9','5-8','<=4'))
 ```
 
 ### Table 1. Exposure-related score (max=3)
@@ -328,7 +328,7 @@ make_summary_table1(data =study_avg_score, "min_exp_tot_score_est","Category", e
 make_summary_table1(data =study_avg_score, "min_out_tot_score_est","Category",expected_levels = c('4','<4')) 
 ```
 
-### Table 1. Association-related score (max=4)
+### Table 1. Association-related score (max=2)
 ```{r}
-make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",expected_levels = c('4','<4'))
+make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",expected_levels = c('2','<2'))
 ```
