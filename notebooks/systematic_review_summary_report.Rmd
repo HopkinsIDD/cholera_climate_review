@@ -563,9 +563,9 @@ stats_all$quality_summary_by_cont %>%
 score_summary_by_exp <- stats_all$quality_summary_by_exp %>%
   mutate(
     score_range = case_when(
-      min_tot_score_est == 11 ~ "Score = 11",
-      min_tot_score_est == 5 ~ "Score = 5",
-      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 9 ~ "Score = 9",
+      min_tot_score_est == 4 ~ "Score = 4",
+      min_tot_score_est >4 & min_tot_score_est < 9 ~ "Score >4 – <9"
     )
   ) %>%
   group_by(exp_class, score_range) %>%
@@ -585,9 +585,9 @@ score_summary_by_exp %>%
 score_summary_by_out <- stats_all$quality_summary_by_out %>%
   mutate(
     score_range = case_when(
-      min_tot_score_est == 11 ~ "Score = 11",
-      min_tot_score_est == 5 ~ "Score = 5",
-      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 9 ~ "Score = 9",
+      min_tot_score_est == 4 ~ "Score = 4",
+      min_tot_score_est >4 & min_tot_score_est < 9 ~ "Score >4 – <9"
     )
   ) %>%
   group_by(out_class_metric, score_range) %>%
@@ -607,9 +607,9 @@ score_summary_by_out %>%
 score_summary_by_cont <- stats_all$quality_summary_by_cont %>%
   mutate(
     score_range = case_when(
-      min_tot_score_est == 11 ~ "Score = 11",
-      min_tot_score_est == 5 ~ "Score = 5",
-      min_tot_score_est >5 & min_tot_score_est < 11 ~ "Score >5 – <11"
+      min_tot_score_est == 9 ~ "Score = 9",
+      min_tot_score_est == 4 ~ "Score = 4",
+      min_tot_score_est >4 & min_tot_score_est < 9 ~ "Score >4 – <9"
     )
   ) %>%
   group_by(continent, score_range) %>%
@@ -1114,9 +1114,9 @@ study_avg_score <- data %>%
             min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     min_tot_score_est = case_when(
-      min_tot_score_est == 11 ~ "11",
-      min_tot_score_est <= 5 ~ "≤ 5",
-      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
+      min_tot_score_est == 9 ~ "9",
+      min_tot_score_est <= 4 ~ "≤ 4",
+      min_tot_score_est > 4 & min_tot_score_est < 9 ~ "5-8"
     ),
     min_out_tot_score_est = case_when(
       min_out_tot_score_est == 4 ~ "4",
@@ -1127,8 +1127,8 @@ study_avg_score <- data %>%
       TRUE ~ "<3"
     ),
     min_a_tot_score_est = case_when(
-      min_a_tot_score_est == 4 ~ "4",
-      TRUE ~ "<4"
+      min_a_tot_score_est == 2 ~ "2",
+      TRUE ~ "<2"
     ),
   )
 
@@ -1140,9 +1140,9 @@ study_avg_score_total <- data %>%
             min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     min_tot_score_est = case_when(
-      min_tot_score_est == 11 ~ "11",
-      min_tot_score_est <= 5 ~ "≤ 5",
-      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
+      min_tot_score_est == 9 ~ "9",
+      min_tot_score_est <= 4 ~ "≤ 4",
+      min_tot_score_est > 4 & min_tot_score_est < 9 ~ "5-8"
     ),
     min_out_tot_score_est = case_when(
       min_out_tot_score_est == 4 ~ "4",
@@ -1153,14 +1153,14 @@ study_avg_score_total <- data %>%
       TRUE ~ "<3"
     ),
     min_a_tot_score_est = case_when(
-      min_a_tot_score_est == 4 ~ "4",
-      TRUE ~ "<4"
+      min_a_tot_score_est == 2 ~ "2",
+      TRUE ~ "<2"
     ),
   )
 
 ```
 
-### Table 1. Overall score (max=11)
+### Table 1. Overall score (max=9)
 ```{r}
 make_summary_table1(data =study_avg_score, "min_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 make_summary_table1(data =study_avg_score_total, "min_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
@@ -1178,7 +1178,7 @@ make_summary_table1(data =study_avg_score, "min_exp_tot_score_est","Category",ou
 make_summary_table1(data =study_avg_score_total, "min_exp_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
-### Table 1. Association-related score (max=4)
+### Table 1. Association-related score (max=2)
 ```{r}
 make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 make_summary_table1(data =study_avg_score_total, "min_a_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
@@ -1192,7 +1192,7 @@ get_study_scores_by_question <- function(
   question_vars = c(
     "exp_temp_tf", "exp_spatial_tf", "exp_source_tf",
     "out_class_case_presentation_tf", "out_temp_tf", "out_spatial_tf",
-    "out_case_df_tf", "a_match_tf", "a_class_tf", "a_adjusted_tf",
+    "out_case_df_tf", "a_class_tf",
     "a_uncert_def_tf"
   )
 ) {
@@ -1217,7 +1217,7 @@ get_study_scores_by_question <- function(
       .groups = "drop"
     ) %>%
     dplyr::mutate(
-      hq_score = dplyr::if_else(min_tot_score_est == 11, "complete-score", "imperfect-score")
+      hq_score = dplyr::if_else(min_tot_score_est == 9, "complete-score", "imperfect-score")
     )
 
   return(out)
@@ -1309,7 +1309,7 @@ make_quality_table <- function(
 question_vars <- c(
   "exp_temp_tf_min","exp_spatial_tf_min","exp_source_tf_min",
   "out_class_case_presentation_tf_min","out_temp_tf_min","out_spatial_tf_min",
-  "out_case_df_tf_min","a_match_tf_min","a_class_tf_min","a_adjusted_tf_min","a_uncert_def_tf_min"
+  "out_case_df_tf_min","a_class_tf_min","a_uncert_def_tf_min"
 )
 
 question_labels <- c(
@@ -1320,9 +1320,7 @@ question_labels <- c(
   out_temp_tf_min = "Outcome: temporal scale reported",
   out_spatial_tf_min = "Outcome: spatial scale reported",
   out_case_df_tf_min = "Outcome: case definition reported",
-  a_match_tf_min = "Association: exposure–outcome scales aligned",
   a_class_tf_min = "Association: effect measure reported",
-  a_adjusted_tf_min = "Association: adjusted for confounders",
   a_uncert_def_tf_min = "Association: uncertainty/definition reported"
 )
 
