@@ -310,16 +310,16 @@ make_scores <- function(df) {
       out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
       out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
       out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
-      a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1),
+      #a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1), # removed from the reporting completeness
       a_class_tf = ifelse(a_effect == "not stated", 0, 1),
-      a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1),
+      #a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1), # removed from the reporting completeness
       a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
       tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
-        out_spatial_tf + out_temp_tf + out_case_df_tf + a_match_tf +
-        a_class_tf + a_adjusted_tf + a_uncert_def_tf,
+        out_spatial_tf + out_temp_tf + out_case_df_tf +
+        a_class_tf + a_uncert_def_tf,
       exp_tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf,
       out_tot_score = out_class_case_presentation_tf + out_spatial_tf + out_temp_tf + out_case_df_tf,
-      a_tot_score = a_match_tf + a_class_tf + a_adjusted_tf + a_uncert_def_tf
+      a_tot_score = a_class_tf + a_uncert_def_tf
     )
 }
 
@@ -353,7 +353,7 @@ get_study_scores <- function(df,study_id_var = "studykey") {
     left_join(exp_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
     left_join(out_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
     left_join(a_tot_score_df, by = c(study_id_var, "exp_class", "out_class_metric")) %>%
-    mutate(hq_score = ifelse(min_tot_score_est == 11, "complete-score", "imperfect-score"))
+    mutate(hq_score = ifelse(min_tot_score_est == 9, "complete-score", "imperfect-score"))
   
 }
 
