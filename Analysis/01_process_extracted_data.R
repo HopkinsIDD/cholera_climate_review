@@ -311,8 +311,7 @@ scores <- est_data %>%
   select(studykey, eff_country, 
          exp_class, exp_temp_scale, exp_spatial_scale, exp_source, 
          out_class_metric, out_class_case_presentation, out_medicattended, out_temp_scale, out_spatial_scale, case_def_raw,
-         exp_out_spatial_scale_match, 
-         a_effect, a_adjusted, a_uncert_def, 
+         a_effect, a_uncert_def, 
          names(.)[str_detect(names(.), "_tf|tot_score")])
 
 # Save
