@@ -112,7 +112,7 @@ get_AFRO_region <- function(data, ctry_col) {
   return(data_with_AFRO_region)
 }
 
-get_country_count <- function(data, ctn = "africa", ctn_col = "continent") {
+get_country_count <- function(data, ctn = "other", ctn_col = "continent") {
   library(dplyr)
   library(tidyr)
   library(stringr)
@@ -186,7 +186,7 @@ get_country_count <- function(data, ctn = "africa", ctn_col = "continent") {
   return(final_tbl)
 }
 
-get_country_count_by_exp <- function(data, ctn = "africa", ctn_col = "continent") {
+get_country_count_by_exp <- function(data, ctn = "other", ctn_col = "continent") {
   library(dplyr)
   library(tidyr)
   library(stringr)
@@ -262,22 +262,22 @@ get_country_count_by_exp <- function(data, ctn = "africa", ctn_col = "continent"
 ```
 
 ```{r}
-get_country_count(data = data,ctn = "africa")
+get_country_count(data = data,ctn = "other")
 ```
 
 ```{r}
-get_country_count_by_exp(data = data,ctn = "africa")
+get_country_count_by_exp(data = data,ctn = "other")
 ```
 
 
 ### Table 1. Study spatial scale
 ```{r}
-make_summary_table1(data = data  %>% filter(continent == "Africa"), "admin_level", "Category")
+make_summary_table1(data = data  %>% filter(continent == "Other"), "admin_level", "Category")
 ```
 
 ### Table 1. Study period
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa"), "study_duration", "Category")
+make_summary_table1(data = data %>% filter(continent == "Other"), "study_duration", "Category")
 ```
 ### Table 1. % of years with WHO reported cases 
 ```{r}
@@ -293,7 +293,7 @@ who_data<-read.csv(here::here(params$who_data_path)) %>%
   select(country,suspected_cases,year)
 
 summary_tbl <- identify_endemicity(
-  processed_data = data %>% filter(continent == "Africa"),
+  processed_data = data %>% filter(continent == "Other"),
   who_data = who_data,
   group_col = 'exp_class'
 ) %>%
@@ -317,7 +317,7 @@ summary_tbl %>%
 ```
 ```{r}
 summary_tbl <- identify_endemicity(
-  processed_data = data %>% filter(continent == "Africa"),
+  processed_data = data %>% filter(continent == "Other"),
   who_data = who_data,
   group_col = NULL
 ) %>%
@@ -343,28 +343,28 @@ summary_tbl %>%
 ## Table 1. Outcome characteristics
 ### Table 1. Outcome type
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa"), "out_class_metric", "Category")
+make_summary_table1(data = data %>% filter(continent == "Other"), "out_class_metric", "Category")
 ```
 
 ### Table 1. Temporal resolution of outcome
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa"), "out_temp_scale", "Category")
+make_summary_table1(data = data %>% filter(continent == "Other"), "out_temp_scale", "Category")
 ```
 
 ### Table 1. Case definition
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa"), "out_class_case_presentation", "Category") 
+make_summary_table1(data = data %>% filter(continent == "Other"), "out_class_case_presentation", "Category") 
 ```
 
 ## Table 1. Statistical methods
 ### Table 1. Measurement of association effect
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa"), "a_class", "Category")
+make_summary_table1(data = data %>% filter(continent == "Other"), "a_class", "Category")
 ```
 
 ### Table 1. Any reported uncertainty
 ```{r}
-make_summary_table1(data = data %>% filter(continent == "Africa") %>% 
+make_summary_table1(data = data %>% filter(continent == "Other") %>% 
                       group_by(studykey,exp_class) %>% 
                       summarize(study_report_sig = case_when(
                         any(sig_report) ~ "TRUE",
@@ -373,7 +373,7 @@ make_summary_table1(data = data %>% filter(continent == "Africa") %>%
                       ungroup(), "study_report_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 
 data_filtered <- data %>%
-  filter(continent == "Africa") %>%
+  filter(continent == "Other") %>%
   group_by(studykey) %>%
   summarize(study_report_sig = case_when(
     any(sig_report) ~ "TRUE",
@@ -399,13 +399,13 @@ make_summary_table1(
 
 ### Table 1. Any model adjustment
 ```{r}
-make_summary_table1(data = data  %>% filter(continent == "Africa") %>% group_by(studykey,exp_class) %>% 
+make_summary_table1(data = data  %>% filter(continent == "Other") %>% group_by(studykey,exp_class) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
                         a_adjusted == "not stated" ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
                       ungroup(), "study_adj_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
-make_summary_table1(data = data %>% filter(continent == "Africa") %>% group_by(studykey) %>% 
+make_summary_table1(data = data %>% filter(continent == "Other") %>% group_by(studykey) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
                         any(a_adjusted %in% "not stated") ~ "Missing",
@@ -416,7 +416,7 @@ make_summary_table1(data = data %>% filter(continent == "Africa") %>% group_by(s
 ## Table 1. Study quality
 ```{r}
 # Study Quality
-data <- data  %>% filter(continent == "Africa") %>% 
+data <- data  %>% filter(continent == "Other") %>% 
   get_study_scores()
 
 study_avg_score <- data %>%
@@ -427,9 +427,9 @@ study_avg_score <- data %>%
             min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     min_tot_score_est = case_when(
-      min_tot_score_est == 11 ~ "11",
-      min_tot_score_est <= 5 ~ "≤ 5",
-      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
+      min_tot_score_est == 9 ~ "9",
+      min_tot_score_est <= 4 ~ "≤ 4",
+      min_tot_score_est > 4 & min_tot_score_est < 9 ~ "5-8"
     ),
     min_out_tot_score_est = case_when(
       min_out_tot_score_est == 4 ~ "4",
@@ -440,8 +440,8 @@ study_avg_score <- data %>%
       TRUE ~ "<3"
     ),
     min_a_tot_score_est = case_when(
-      min_a_tot_score_est == 4 ~ "4",
-      TRUE ~ "<4"
+      min_a_tot_score_est == 2 ~ "2",
+      TRUE ~ "<2"
     ),
   )
 
@@ -453,9 +453,9 @@ study_avg_score_total <- data %>%
             min_a_tot_score_est = mean(min_a_tot_score_est, na.rm = TRUE), .groups = "drop") %>%
   mutate(
     min_tot_score_est = case_when(
-      min_tot_score_est == 11 ~ "11",
-      min_tot_score_est <= 5 ~ "≤ 5",
-      min_tot_score_est > 5 & min_tot_score_est < 11 ~ "6-10"
+      min_tot_score_est == 9 ~ "9",
+      min_tot_score_est <= 4 ~ "≤ 4",
+      min_tot_score_est > 4 & min_tot_score_est < 9 ~ "5-8"
     ),
     min_out_tot_score_est = case_when(
       min_out_tot_score_est == 4 ~ "4",
@@ -466,14 +466,14 @@ study_avg_score_total <- data %>%
       TRUE ~ "<3"
     ),
     min_a_tot_score_est = case_when(
-      min_a_tot_score_est == 4 ~ "4",
-      TRUE ~ "<4"
+      min_a_tot_score_est == 2 ~ "2",
+      TRUE ~ "<2"
     ),
   )
 
 ```
 
-### Table 1. Overall score (max=11)
+### Table 1. Overall score (max=9)
 ```{r}
 make_summary_table1(data =study_avg_score, "min_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 make_summary_table1(data =study_avg_score_total, "min_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
@@ -491,13 +491,13 @@ make_summary_table1(data =study_avg_score, "min_exp_tot_score_est","Category",ou
 make_summary_table1(data =study_avg_score_total, "min_exp_tot_score_est","Category",output_cols = "Overall",exp_class_order = c("Overall"))
 ```
 
-### Table 1. Association-related score (max=4)
+### Table 1. Association-related score (max=2)
 ```{r}
 make_summary_table1(data =study_avg_score, "min_a_tot_score_est","Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought"))
 
 if (n_distinct(study_avg_score_total$min_a_tot_score_est) == 1) {
   fake_row <- study_avg_score_total[1, ]
-  fake_row$min_a_tot_score_est <- "<4"
+  fake_row$min_a_tot_score_est <- "<2"
   fake_row$studykey <- "dummy_study"
   data_filtered <- bind_rows(study_avg_score_total, fake_row)
 } else{
