@@ -30,7 +30,7 @@ scores <- readRDS(here("generated_data/paper_scores.rds")) %>%
   slice_min(tot_score, with_ties = F) %>%
   ungroup() %>% 
   distinct(studykey, tot_score) %>% 
-  mutate(score_cat = cut(tot_score, c(0, 6, 11, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
+  mutate(score_cat = cut(tot_score, c(0, 5, 9, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
          score_cat = forcats::fct_relevel(score_cat, rev( c("low", "medium", "high"))))
 
 
@@ -621,9 +621,7 @@ quality_data <- plot_data %>%
     out_spatial_perfect = as.integer(all(out_spatial_tf == 1)),
     out_case_df_perfect = as.integer(all(out_case_df_tf == 1)),
     
-    a_match_perfect = as.integer(all(a_match_tf == 1)),
     a_class_perfect = as.integer(all(a_class_tf == 1)),
-    a_adjusted_perfect = as.integer(all(a_adjusted_tf == 1)),
     a_uncert_def_perfect = as.integer(all(a_uncert_def_tf == 1)),
     
     .groups = "drop"
@@ -637,9 +635,7 @@ quality_data <- plot_data %>%
          out_temp_perfect,
          out_spatial_perfect,
          out_case_df_perfect,
-         a_match_perfect,
          a_class_perfect,
-         a_adjusted_perfect,
          a_uncert_def_perfect)
 
 plot_long <- quality_data %>%
@@ -665,9 +661,7 @@ plot_long <- quality_data %>%
                             "out_temp_perfect" = "Temperature scale (outcome)",
                             "out_spatial_perfect" = "Spatial scale (outcome)",
                             "out_case_df_perfect" = "Case definition",
-                            "a_match_perfect" = "Exposure-outcome match",
                             "a_class_perfect" = "Effect classification",
-                            "a_adjusted_perfect" = "Adjustment",
                             "a_uncert_def_perfect" = "Uncertainty definition"
     )
   ) %>%
