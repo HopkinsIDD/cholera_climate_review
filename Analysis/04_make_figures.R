@@ -654,15 +654,15 @@ plot_long <- quality_data %>%
     
     # Descriptive label without prefixes
     variable_label = recode(variable,
-                            "exp_temp_perfect" = "Temperature scale (exposure)",
-                            "exp_spatial_perfect" = "Spatial scale (exposure)",
-                            "exp_source_perfect" = "Exposure source",
-                            "out_class_case_presentation_perfect" = "Case classification",
-                            "out_temp_perfect" = "Temperature scale (outcome)",
-                            "out_spatial_perfect" = "Spatial scale (outcome)",
-                            "out_case_df_perfect" = "Case definition",
-                            "a_class_perfect" = "Effect classification",
-                            "a_uncert_def_perfect" = "Uncertainty definition"
+                            "exp_source_perfect" = "Q1",
+                            "exp_spatial_perfect" = "Q2",
+                            "exp_temp_perfect" = "Q3",
+                            "out_case_df_perfect" = "Q4",
+                            "out_class_case_presentation_perfect" = "Q5",
+                            "out_spatial_perfect" = "Q6",
+                            "out_temp_perfect" = "Q7",
+                            "a_class_perfect" = "Q8",
+                            "a_uncert_def_perfect" = "Q9"
     )
   ) %>%
   mutate(
@@ -681,7 +681,7 @@ figS5_prep <- ggplot(plot_long %>% filter(exp_class == "precipitation"), aes(x =
     values = c("0" = "#1f78b4", "1" = "#ffdf00"),  # Blue (0), Yellow (1)
     name = "Reporting status"
   ) +
-  labs(x = "Quality Dimension", y = "Study") +
+  labs(x = "Reporting Completeness Questions", y = "Study") +
   facet_grid(exp_class ~ type, scales = "free", space = "free") +
   theme_bw() +
   theme(
@@ -696,7 +696,7 @@ figS5_other3 <- ggplot(plot_long %>% filter(exp_class != "precipitation"), aes(x
     values = c("0" = "#1f78b4", "1" = "#ffdf00"),  # Blue (0), Yellow (1)
     name = "Reporting status"
   ) +
-  labs(x = "Quality Dimension", y = "Study") +
+  labs(x = "Reporting Completeness Questions", y = "Study") +
   facet_grid(exp_class ~ type, scales = "free", space = "free") +
   theme_bw() +
   theme(
@@ -710,7 +710,7 @@ figS5 <- (figS5_prep / figS5_other3) +
   plot_layout(ncol = 2, guides = "collect") +
   plot_annotation(tag_levels = "a")
 
-ggsave('figures/figS5.png',plot=figS5,width = 10, height = 12, dpi = 300, bg = "white")
+ggsave('figures/figS5_1022.png',plot=figS5,width = 10, height = 12, dpi = 300, bg = "white")
 
 
 ## Figure S6-S8: effect size stratification by continent, climate and endemicity ----
