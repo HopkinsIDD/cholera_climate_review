@@ -687,6 +687,52 @@ add_doe_styling2 <- function(gtx) {
     )
 }
 
+add_doe_styling3 <- function(gtx) {
+  
+  gtx %>% 
+    # Add colors for score quality
+    tab_style(
+      style = list(cell_text(weight = "bold")),
+      locations = cells_body(rows = score_cat == "high")
+    ) %>% 
+    cols_hide(c("score_cat", "bottom_line", "overall_dir"))  %>% 
+    tab_stub_indent(
+      rows = everything(),
+      indent = 3
+    ) %>% 
+    tab_options(
+      table.font.size = 10,
+      row_group.font.weight = "bold",
+      data_row.padding = px(1)
+    ) %>% 
+    opt_css(
+      css = "vertical-text {
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+      }"
+    ) %>% 
+    cols_label(
+      # Covariates
+      continent = md("Continent"),
+      admin_level = md("Admin level"),
+      out_class_case_presentation = md("Case def."),
+      # Outcomes
+      incidence = md(vert_lab("Incid.")),
+      occurrence = md(vert_lab("Occur."))
+    ) %>%
+    tab_spanner(
+      label = "Outcomes",
+      columns = c(incidence, occurrence)
+    ) %>%
+    tab_spanner(
+      label = "Study characteristics",
+      columns = c(continent, admin_level, out_class_case_presentation)
+    ) %>% 
+    sub_missing(
+      missing_text = "-"
+    ) 
+}
+
 # Attempt at combining two exposures
 make_dir_data2 <- function(df, 
                            exposure, 
@@ -700,6 +746,7 @@ make_dir_data2 <- function(df,
     select(studykey, pubyear, exp_class, out_class_metric, all_of(covars), dir_icon, overall_dir, score_cat, bottom_line) %>% 
     filter(exp_class == exposure) %>% 
     mutate(out_class_metric = factor(out_class_metric, levels = c("incidence", "occurrence"))) %>% 
+    filter(!is.na(out_class_metric)) %>% 
     pivot_wider(names_from = "out_class_metric",
                 values_from = "dir_icon",
                 names_expand = TRUE) %>% 
@@ -1038,14 +1085,21 @@ plot_spatial_distribution_map <- function(plot_data,
 
 make_gt_dirplot <- function(data, exposure) {
   # Make direction data for this exposure
-  this_dir_dat <- make_dir_data2(df = data, exposure = exposure)
+  this_dir_dat <- make_dir_data2(df = data, exposure = exposure) %>% 
+    arrange(overall_dir, incidence, occurrence, score_cat, str_extract(studykey, "[0-9]{4}"), desc(admin_level)) %>% 
+    group_by(studykey, continent) %>% 
+    slice(1) %>% 
+    arrange(overall_dir, incidence, occurrence, score_cat, str_extract(studykey, "[0-9]{4}"), desc(admin_level)) 
+    
   
   # Build gt table
   gt_table <- this_dir_dat %>%
     gt(groupname_col = "overall_dir", rowname_col = "studykey") %>% 
     fmt_icon(c("incidence", "occurrence")) %>% 
-    add_doe_styling2() %>% 
-    tab_header(title = str_to_title(exposure))
+    add_doe_styling3() %>%
+    tab_header(title = str_to_title(exposure))  %>% 
+    tab_style(style = cell_fill(color = "lightgrey"),
+              locations = cells_body(rows = seq(1, nrow(this_dir_dat), 2)))
   
   gt_table
 }
