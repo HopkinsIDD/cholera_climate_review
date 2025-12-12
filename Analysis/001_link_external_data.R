@@ -251,7 +251,7 @@ p <- ggplot() +
   geom_hline(yintercept = country_positions, color = "black", linetype = "dotted", alpha = 0.5)
 p
 
-#ggplot2::ggsave("Analysis/Figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
+#ggplot2::ggsave("figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
 
 ## Function to identify endemicity status of the country based on the years prior to study period ----
 
