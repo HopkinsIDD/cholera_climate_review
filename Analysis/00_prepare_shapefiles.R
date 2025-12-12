@@ -1,3 +1,5 @@
+# This script is used to generate shapefiles linked to extracted data ----
+
 # Load R packages ----
 library(tidyverse)
 library(stringdist)
@@ -651,4 +653,4 @@ hti_Artibonite <- rgeoboundaries::gb_adm1("HTI") %>%
     lctn_pr = "new-47"
   )
 total_shps <- rbind(total_shps,hti_Artibonite)
-#saveRDS(total_shps,"C:/Users/zheng/Cholera/cholera_climate_review/Data/shapefiles/location_shapefiles.rds")
+#saveRDS(total_shps,"cholera_climate_review/Data/shapefiles/location_shapefiles.rds")
