@@ -8,7 +8,7 @@ library(patchwork)
 sf::sf_use_s2(FALSE)
 
 # Extracted data ----
-extracted_data <- read.csv("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets_shps.csv")
+extracted_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv")
 
 # Climatic zone ----
 ## Load raster and convert to polygons
@@ -52,7 +52,7 @@ result_climate <- largest_intersections %>%
   dplyr::select(lctn_pr, new_climatic_zone) %>% 
   as.data.frame() %>% 
   dplyr::select(!geometry) %>% 
-  dplyr::right_join(extracted_data, by = c("lctn_pr" = "location_period_id")) %>% 
+  dplyr::right_join(extracted_data, by = "lctn_pr") %>% 
   dplyr::left_join(climatic_shp, by = "lctn_pr") %>% 
   dplyr::mutate(new_climatic_zone = as.factor(new_climatic_zone)) %>% 
   sf::st_as_sf()
@@ -124,8 +124,9 @@ if(!file.exists("Data/inland_coast/dist_to_water_results.rds")){
     identify_dist_to_water(single_sf)
   })
   saveRDS(dist_to_water_results,"Data/inland_coast/dist_to_water_results.rds")  
+}else {
+  dist_to_water_results <- readRDS("Data/inland_coast/dist_to_water_results.rds")
 }
-
 total_shp$inland_coast <- dist_to_water_results
 
 ## Perform the left join to add the inland_coast column
@@ -214,7 +215,7 @@ earliest_data <- report %>%
 ## Merge with processed_extracted_data to compare TL with earliest available data
 processed_extracted_data <- processed_extracted_data %>%
   left_join(earliest_data, by = c("eff_country" = "region")) %>%
-  mutate(border_color = ifelse(year_tl < earliest_year, "Before the earliest WHO report", "black"))
+  mutate(border_color = ifelse(year_tl < earliest_year, "#FFA500", "black"))
 
 ## Heatmap
 p <- ggplot() +
@@ -243,7 +244,7 @@ p <- ggplot() +
             aes(xmin = year_tl, xmax = year_tr, 
                 ymin = as.numeric(as.factor(eff_country)) - 0.5, 
                 ymax = as.numeric(as.factor(eff_country)) + 0.5, 
-                color = border_color),  # Dynamic border color
+                color = border_color),
             fill = "#FFA500",
             alpha = 0.4) +  
   scale_color_identity(guide = "legend", name = "Study Period", labels = c("After earliest WHO report","Before earliest WHO report")) + 
