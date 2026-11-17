@@ -22,7 +22,8 @@ climatic_shp <- readRDS("Data/shapefiles/location_shapefiles.rds") %>%
 ## Perform spatial intersection
 ### Estimate the intersections between shapefiles and climatic zone shapefiles (only need to run one time)
 if(!file.exists("Data/shapefiles/intersected_shp.rds")){
-  for (lp_idx in unique(extracted_data)) {
+  intersections <- NULL
+  for (lp_idx in unique(as.character(extracted_data$location_period_id))) {
     
     shp_tmp <- climatic_shp[climatic_shp$lctn_pr == lp_idx,]$geometry
     
@@ -124,9 +125,11 @@ if(!file.exists("Data/inland_coast/dist_to_water_results.rds")){
     identify_dist_to_water(single_sf)
   })
   saveRDS(dist_to_water_results,"Data/inland_coast/dist_to_water_results.rds")  
+} else {
+  dist_to_water_results <- readRDS("Data/inland_coast/dist_to_water_results.rds")
 }
 
-total_shp$inland_coast <- dist_to_water_results
+total_shp$inland_coast <- unlist(dist_to_water_results)
 
 ## Perform the left join to add the inland_coast column
 export_result <- export_result %>%
@@ -158,7 +161,7 @@ extracted_data <-export_result %>%
       eff_admin == "adm0" ~ "national",
       eff_admin == "non-adm geography" & eff_loc == "bengal delta region" ~ "subnational",
       eff_country == "HTI" & eff_admin == "non-adm geography" ~ "subnational",
-      eff_country == "NGA" & eff_loc == "multistate",
+      eff_country == "NGA" & eff_loc == "multistate" ~ "subnational",
       studykey == "Oloukoi2014" ~ "subnational",
       eff_country == "IND|PAK" & studykey == "Jutla2013" ~ "supranational",
       TRUE ~ "supranational"

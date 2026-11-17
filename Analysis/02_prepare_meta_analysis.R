@@ -84,6 +84,13 @@ if (opt$stratification != "none") {
 }
 
 if (nrow(data) == 0) {
+  # Remove outputs of earlier runs for this stratum so that 03 and 04 do not
+  # pick up results from a previous version of the data
+  old_files <- c(make_stan_data_filename(opt = opt),
+                 make_stan_fit_filename(opt = opt),
+                 make_stan_genquant_filename(opt = opt))
+  unlink(old_files[file.exists(old_files)])
+  
   # https://stackoverflow.com/questions/17837289/break-exit-script
   exit <- function() { invokeRestart("abort") }    
   print("No data to run on.")
@@ -154,6 +161,7 @@ make_covar_combs <- function(covar, data) {
 }
 
 # Attempt to do everything in one go
+# (empty list when no row has a missing covariate)
 X_missing_covar_combs <- map(ind_missing, function(i) {
   miss <- get_missing_covars(X, i)
   X_combs <- make_covar_combs(covar = miss, data = data)
@@ -169,9 +177,10 @@ X_missing_covar_combs <- map(ind_missing, function(i) {
 
 # Define the starts and ends of fake matrix
 X_comb_mat_sizes <- map_dbl(X_missing_covar_combs, nrow)
-missing_covar_starts <- c(1, cumsum(X_comb_mat_sizes[-length(X_comb_mat_sizes)]) + 1)
 missing_covar_ends <- cumsum(X_comb_mat_sizes)
-X_missing <- reduce(X_missing_covar_combs, rbind)
+missing_covar_starts <- missing_covar_ends - X_comb_mat_sizes + 1
+X_missing <- reduce(X_missing_covar_combs, rbind, 
+                    .init = matrix(0, nrow = 0, ncol = ncol(X)))
 
 # Prior is equal probability between classes. Can make this different later.
 prob_missing_covar_combs <- future_map(ind_missing, function(i) {
@@ -187,7 +196,7 @@ prob_missing_covar_combs <- future_map(ind_missing, function(i) {
   
   prop <- X_combs %>% 
     left_join(dat %>% 
-                count_(vars = miss) %>% 
+                count(across(all_of(miss))) %>% 
                 mutate(prop = n/sum(n))) %>% 
     replace_na(list(prop = 1e-2)) %>% 
     mutate(prop = prop/sum(prop))
@@ -197,7 +206,8 @@ prob_missing_covar_combs <- future_map(ind_missing, function(i) {
 
 p_missing_covar <- prob_missing_covar_combs %>% 
   map(~ .$prop) %>% 
-  unlist()
+  unlist() %>% 
+  as.numeric()
 
 X[is.na(X)] <- 0
 
@@ -220,12 +230,14 @@ all_u_covar <- future_map(covars,
 u_covar_mat <- model.matrix(data = all_u_covar, eq) %>% 
   unique()
 
+# Weights come from the estimates being fitted (this exposure, outcome and
+# stratum), not from the whole dataset
 poststrat_matrices <- future_map(c("all", covars), function(x){
   getPostStratMatrix(variable = x,
                      u_covar_mat = u_covar_mat,
                      u_covar_df = all_u_covar,
                      eq = eq,
-                     est_data = est_data)
+                     est_data = data)
 })
 
 U_poststrats <- map_dbl(poststrat_matrices, nrow)

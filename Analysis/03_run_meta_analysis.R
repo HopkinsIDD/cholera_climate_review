@@ -31,7 +31,16 @@ print(opt)
 
 # Load stan data ----------------------------------------------------------
 
+if (!file.exists(make_stan_data_filename(opt = opt))) {
+  # 02 found no data for this stratum
+  cat("-- No stan data for", make_stan_data_filename(opt = opt), "\n")
+  quit(save = "no", status = 0)
+}
+
 stan_data <- readRDS(make_stan_data_filename(opt = opt))
+
+# Inverse Fisher z-transform of the post-stratified estimates for correlations
+stan_data$stan_data$transform <- as.integer(opt$effect == "corr")
 
 # Compile and run stan model ----------------------------------------------
 
@@ -48,10 +57,7 @@ if (file.exists(make_stan_fit_filename(opt = opt)) & !opt$redo) {
 } else {
   
   stan_fit <-  stan_model$sample(
-    data = append(
-      stan_data$stan_data, 
-      list(transform = 1)
-    ),
+    data = stan_data$stan_data,
     iter_warmup = 250,
     iter_sampling = 500,
     parallel_chains = 4,

@@ -105,8 +105,12 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     a_class = case_when(a_class == "ratio" ~ "log10_ratio",
                         TRUE ~ a_class)
   ) %>% 
+  # Keep the extraction labels of a_class (used by the supplement tables);
+  # ratios keep the label "ratio" but a_effect is now on the log10 scale.
+  # Hulland2019 precipitation estimates are risk differences (not log10'd above).
   mutate(
-    a_class = a_class_backup
+    a_class = case_when(studykey == "Hulland2019" & exp_class == "precipitation" ~ "risk difference",
+                        T ~ a_class_backup)
   ) %>% 
   select(!a_class_backup) %>% 
   # Spatial scales
@@ -153,8 +157,10 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     # Levels of temporal scale
     out_temp_scale = factor(get_out_tempscale_dict()[as.character(out_temp_scale)], levels = get_out_tempscale_dict()),
     # Define categories of pct years with cholera
-    pct_years_cholera_cat = cut(mean_percent_year_with_cases, c(0, 50, 95, Inf), include.lowest = T, right = FALSE) %>% 
-      factor(levels = c("[0,50)", "[50,95)", "[95,Inf]"),
+    # Same boundaries as 001_link_external_data.R, 04_make_figures.R and the
+    # notebooks: <= 50, (50, 95], > 95
+    pct_years_cholera_cat = cut(mean_percent_year_with_cases, c(0, 50, 95, Inf), include.lowest = T, right = TRUE) %>% 
+      factor(levels = c("[0,50]", "(50,95]", "(95,Inf]"),
              labels = c("<50%", "50-95%", ">95%")),
     # Levels of climate zones
     new_climatic_zone = factor(new_climatic_zone, 
@@ -886,7 +892,7 @@ if (opt$do_plots) {
 ## Risk/odds ratios ----
 
 log10_ratio_data <- est_data %>% 
-  filter(str_detect(a_class, "log10_ratio")) %>% 
+  filter(a_class == "ratio") %>% 
   correct_effect(thresh = 0) %>%
   filter(!(a_direction %in%  c("not stated", "none"))) %>% 
   define_stat_significance() %>% 

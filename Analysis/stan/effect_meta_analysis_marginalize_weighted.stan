@@ -129,7 +129,11 @@ generated quantities {
       vector[U_covar] eta_re;
       
       eta = u_covar_mat * beta;
-      poststrat = poststrat_mat_comb * inv_z_transform(eta);
+      if (transform == 1) {
+        poststrat = poststrat_mat_comb * inv_z_transform(eta);
+      } else {
+        poststrat = poststrat_mat_comb * eta;
+      }
       // 
       // for (i in 1:U_covar) {
       //   array[0] real x_r;

@@ -142,7 +142,7 @@ make_direction_counts <- function(df,
                                   vars) {
   
   df %>% 
-    count_(vars =  c("a_direction", "a_uncert_significant", vars)) %>%
+    count(across(all_of(c("a_direction", "a_uncert_significant", vars)))) %>%
     rowwise() %>% 
     mutate(n = ifelse(a_direction == "negative", -n, n)) %>% 
     ungroup() %>% 
@@ -168,8 +168,8 @@ correct_effect <- function(df,
 get_estimate_thresholds <- function() {
   tribble(
     ~a_class, ~y,
-    "correlation", 0,
-    "log10_ratio", 0,
+    "correlation coefficient", 0,
+    "ratio", 0,    # a_effect of ratios is on the log10 scale
     "risk difference", 0
   )
 }
@@ -303,15 +303,17 @@ get_WHO_case_data <- function(data_path = here::here("Data/endemicity/who_annual
 make_scores <- function(df) {
   df  %>% 
     mutate(
-      exp_temp_tf = ifelse(exp_temp_scale == 99, 0, 1),
+      # Raw codes ("not stated", 99) or their recoded values in
+      # 01_process_extracted_data.R ("Unknown", "missing", NA) count as missing
+      exp_temp_tf = ifelse(as.character(exp_temp_scale) %in% c("99", "missing"), 0, 1),
       exp_spatial_tf = ifelse(exp_spatial_scale == "not stated", 0, 1),
       exp_source_tf = ifelse(exp_source == "not stated", 0, 1),
-      out_class_case_presentation_tf = ifelse(out_class_case_presentation == "not stated", 0, 1),
-      out_temp_tf = ifelse(out_temp_scale == 99, 0, 1),
+      out_class_case_presentation_tf = ifelse(out_class_case_presentation %in% c("not stated", "Unknown"), 0, 1),
+      out_temp_tf = ifelse(as.character(out_temp_scale) %in% c("99", "missing"), 0, 1),
       out_spatial_tf = ifelse(out_spatial_scale == "not stated", 0, 1),
       out_case_df_tf = ifelse(case_def_raw == "not stated", 0, 1),
       #a_match_tf = ifelse(exp_out_spatial_scale_match == "unknown", 0, 1), # removed from the reporting completeness
-      a_class_tf = ifelse(a_effect == "not stated", 0, 1),
+      a_class_tf = ifelse(is.na(a_effect) | as.character(a_effect) == "not stated", 0, 1),
       #a_adjusted_tf = ifelse(a_adjusted == "not stated", 0, 1), # removed from the reporting completeness
       a_uncert_def_tf = ifelse(a_uncert_def == "not stated", 0, 1),
       tot_score = exp_temp_tf + exp_spatial_tf + exp_source_tf + out_class_case_presentation_tf +
@@ -550,11 +552,37 @@ summarise_directions <- function(df,
               n_pos = sum(a_direction == "positive"),
               n_neg = sum(a_direction == "negative"),
               n_dir = n_pos + n_neg,
-              overall_dir = case_when(n_pos >= thresh * n_dir ~ "positive",
+              overall_dir = case_when(n_dir == 0 ~ "uncertain",
+                                      n_pos >= thresh * n_dir ~ "positive",
                                       n_neg >= thresh * n_dir ~ "negative",
                                       TRUE ~ "uncertain") %>% 
                 factor(levels = c("positive", "negative", "uncertain"),
                        labels = c("higher", "lower", "uncertain")))
+}
+
+#' Study quality scores, one row per study (minimum score), with categories
+get_score_categories <- function(scores_path = here::here("generated_data/paper_scores.rds")) {
+  readRDS(scores_path) %>% 
+    group_by(studykey) %>% 
+    slice_min(tot_score, with_ties = F) %>%
+    ungroup() %>% 
+    distinct(studykey, tot_score) %>% 
+    mutate(score_cat = cut(tot_score, c(0, 5, 9, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
+           score_cat = forcats::fct_relevel(score_cat, rev( c("low", "medium", "high"))))
+}
+
+#' Statistics for the direction of effect plot, one row per study and stratum
+make_effdir_data <- function(est_data) {
+  est_data %>% 
+    group_by(studykey, out_class_case_presentation, out_class_metric, exp_class, continent, admin_level) %>%
+    summarise_directions() %>% 
+    ungroup()  %>% 
+    mutate(studykey = str_replace(studykey, "\xe6", "e"),
+           dir_icon = case_when(overall_dir == "higher" ~ "caret-up",
+                                overall_dir == "lower" ~ "caret-down",
+                                TRUE ~ "caret-left,caret-right"),
+           overall_dir = factor(overall_dir, labels = c("Positive", "Negative", "Conflicting")), 
+           pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) 
 }
 
 vert_lab <- function(label){
@@ -736,10 +764,11 @@ add_doe_styling3 <- function(gtx) {
 # Attempt at combining two exposures
 make_dir_data2 <- function(df, 
                            exposure, 
-                           covars = c("continent", "admin_level", "out_class_case_presentation")) {
+                           covars = c("continent", "admin_level", "out_class_case_presentation"),
+                           scores) {
   df %>% 
     mutate(dir_icon_lvls = factor(dir_icon, levels = c("caret-up", "caret-left,caret-right", "caret-down"))) %>% 
-    inner_join(scores) %>% 
+    inner_join(scores, by = "studykey") %>% 
     arrange(dir_icon_lvls, score_cat, pubyear) %>% 
     group_by(dir_icon) %>% 
     mutate(bottom_line = row_number() == n()) %>% 
@@ -1083,9 +1112,9 @@ plot_spatial_distribution_map <- function(plot_data,
 
 
 
-make_gt_dirplot <- function(data, exposure) {
+make_gt_dirplot <- function(data, exposure, scores) {
   # Make direction data for this exposure
-  this_dir_dat <- make_dir_data2(df = data, exposure = exposure) %>% 
+  this_dir_dat <- make_dir_data2(df = data, exposure = exposure, scores = scores) %>% 
     arrange(overall_dir, incidence, occurrence, score_cat, str_extract(studykey, "[0-9]{4}"), desc(admin_level)) %>% 
     group_by(studykey, continent) %>% 
     slice(1) %>% 
@@ -1099,16 +1128,17 @@ make_gt_dirplot <- function(data, exposure) {
     add_doe_styling3() %>%
     tab_header(title = str_to_title(exposure))  %>% 
     tab_style(style = cell_fill(color = "lightgrey"),
-              locations = cells_body(rows = seq(1, nrow(this_dir_dat), 2)))
+              # seq_len() so that an exposure with no rows gives no stripes
+              locations = cells_body(rows = which(seq_len(nrow(this_dir_dat)) %% 2 == 1)))
   
   gt_table
 }
 
-save_gt_dirplot <- function(data, exposure) {
-  gt_table <- make_gt_dirplot(data = data, exposure = exposure)
+save_gt_dirplot <- function(data, exposure, scores, outdir = "figures") {
+  gt_table <- make_gt_dirplot(data = data, exposure = exposure, scores = scores)
   gtsave(
     gt_table, 
-    filename = str_glue("figures/dirplot_{exposure}.png"), 
+    filename = file.path(outdir, str_glue("dirplot_{exposure}.png")), 
     zoom = 4, 
     vwidth = 1200,
     vheight = 1800
@@ -1116,11 +1146,18 @@ save_gt_dirplot <- function(data, exposure) {
 }
 
 compose_effdir_plot <- function(data,
+                                scores,
                                 filename = "figures/eff_dir_plot_exposures_by_outcome.png") {
+  # Per-call directory for the intermediate tables, so that one call never
+  # reads the tables of another
+  tmp_dir <- tempfile("dirplot_")
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+  
   # Save tables for all exposures
   walk(
     get_all_exp_class(), 
-    ~ save_gt_dirplot(data = data, exposure = .)
+    ~ save_gt_dirplot(data = data, exposure = ., scores = scores, outdir = tmp_dir)
   )
   
   # Read images and compose
@@ -1128,7 +1165,7 @@ compose_effdir_plot <- function(data,
   plots <- map(
     get_all_exp_class(),
     function(x) {
-      image_read(str_glue("figures/dirplot_{x}.png")) %>% 
+      image_read(file.path(tmp_dir, str_glue("dirplot_{x}.png"))) %>% 
         image_ggplot() + 
         theme(plot.margin = unit(c(1, 1, 1, 1), units = "lines"))
     }
@@ -1350,6 +1387,8 @@ getPostStratMatrix <- function(variable,
   # Add intercept if none present
   for (i in 1:nrow(poststrat_mat)) {
     if (sum(poststrat_mat[i, ]) == 0) {
+      warning("No complete rows to post-stratify ", variable, " = ", 
+              u_poststrat_strata[i], "; using the reference covariate pattern.")
       poststrat_mat[i, 1] <- 1
     }
   }

@@ -63,7 +63,6 @@ parameters {
 }
 
 transformed parameters {
-  vector[N_full] mu_full;
   vector[N_missing] ll_missing;
   
   if (N_missing > 0) {
@@ -103,6 +102,9 @@ generated quantities {
   // vector[U_poststrat] poststrat_pred_mean;    // expectation of postsratified prediction interval mean 
   vector[U_poststrat] poststrat_pred;    // postsratified prediction interval mean
   vector[J] eff_size = exp(beta);
+  // Note: with one Bernoulli draw per estimate, sigma_epsilon is weakly
+  // identified, so i_squared largely reflects the priors on the two sds.
+  // L and map_to_weight are passed in but not used by this model.
   real i_squared = sigma_re^2 / (sigma_re^2 + sigma_epsilon^2);
   
   {

@@ -25,26 +25,11 @@ est_data <- readRDS(here("generated_data/processed_estimate_data.rds"))
 
 # Study quality scores. For now taking the min score for a given study, 
 # but may need to update
-scores <- readRDS(here("generated_data/paper_scores.rds")) %>% 
-  group_by(studykey) %>% 
-  slice_min(tot_score, with_ties = F) %>%
-  ungroup() %>% 
-  distinct(studykey, tot_score) %>% 
-  mutate(score_cat = cut(tot_score, c(0, 5, 9, Inf), labels = c("low", "medium", "high"), include.lower = T, right = F),
-         score_cat = forcats::fct_relevel(score_cat, rev( c("low", "medium", "high"))))
+scores <- get_score_categories()
 
 
 # Compute statistics for direction of effect plot
-dir_data <- est_data %>% 
-  group_by(studykey, out_class_case_presentation, out_class_metric, exp_class, continent, admin_level) %>%
-  summarise_directions() %>% 
-  ungroup()  %>% 
-  mutate(studykey = str_replace(studykey, "\xe6", "e"),
-         dir_icon = case_when(overall_dir == "higher" ~ "caret-up",
-                              overall_dir == "lower" ~ "caret-down",
-                              TRUE ~ "caret-left,caret-right"),
-         overall_dir = factor(overall_dir, labels = c("Positive", "Negative", "Conflicting")), 
-         pubyear = str_extract(studykey, "[0-9]{4}") %>% as.numeric()) 
+dir_data <- make_effdir_data(est_data)
 
 
 # Figure 2: Spatial-temporal coverage of studies --------------------------
@@ -274,6 +259,7 @@ ggsave(fig2_v2, filename = "figures/figure_2_v2.png",
 
 # Make overall plot
 compose_effdir_plot(data = dir_data,
+                    scores = scores,
                     filename = "figures/figure_3.png")
 
 
@@ -749,6 +735,7 @@ walk(
 
 walk(c("Asia", "Africa", "Other"), function(x) {
   compose_effdir_plot(data = dir_data %>% filter(continent == x),
+                      scores = scores,
                       filename = str_glue("figures/supfig_eff_dir_plot_{x}.png"))
 })
 
