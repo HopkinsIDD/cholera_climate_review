@@ -8,7 +8,7 @@ library(patchwork)
 sf::sf_use_s2(FALSE)
 
 # Extracted data ----
-extracted_data <- read.csv("Data/extracted_data/cholera_climate_systematic_review_extract_into_sheets_shps.csv")
+extracted_data <- read.csv("Data/extracted_data/processed_cholera_climate_systematic_review_extract_into_sheets.csv")
 
 # Climatic zone ----
 ## Load raster and convert to polygons
@@ -23,7 +23,7 @@ climatic_shp <- readRDS("Data/shapefiles/location_shapefiles.rds") %>%
 ### Estimate the intersections between shapefiles and climatic zone shapefiles (only need to run one time)
 if(!file.exists("Data/shapefiles/intersected_shp.rds")){
   intersections <- NULL
-  for (lp_idx in unique(as.character(extracted_data$location_period_id))) {
+  for (lp_idx in unique(as.character(extracted_data$lctn_pr))) {
     
     shp_tmp <- climatic_shp[climatic_shp$lctn_pr == lp_idx,]$geometry
     
@@ -53,7 +53,7 @@ result_climate <- largest_intersections %>%
   dplyr::select(lctn_pr, new_climatic_zone) %>% 
   as.data.frame() %>% 
   dplyr::select(!geometry) %>% 
-  dplyr::right_join(extracted_data, by = c("lctn_pr" = "location_period_id")) %>% 
+  dplyr::right_join(extracted_data, by = "lctn_pr") %>% 
   dplyr::left_join(climatic_shp, by = "lctn_pr") %>% 
   dplyr::mutate(new_climatic_zone = as.factor(new_climatic_zone)) %>% 
   sf::st_as_sf()
@@ -217,7 +217,7 @@ earliest_data <- report %>%
 ## Merge with processed_extracted_data to compare TL with earliest available data
 processed_extracted_data <- processed_extracted_data %>%
   left_join(earliest_data, by = c("eff_country" = "region")) %>%
-  mutate(border_color = ifelse(year_tl < earliest_year, "Before the earliest WHO report", "black"))
+  mutate(border_color = ifelse(year_tl < earliest_year, "#FFA500", "black"))
 
 ## Heatmap
 p <- ggplot() +
@@ -246,14 +246,14 @@ p <- ggplot() +
             aes(xmin = year_tl, xmax = year_tr, 
                 ymin = as.numeric(as.factor(eff_country)) - 0.5, 
                 ymax = as.numeric(as.factor(eff_country)) + 0.5, 
-                color = border_color),  # Dynamic border color
+                color = border_color),
             fill = "#FFA500",
             alpha = 0.4) +  
   scale_color_identity(guide = "legend", name = "Study Period", labels = c("After earliest WHO report","Before earliest WHO report")) + 
   geom_hline(yintercept = country_positions, color = "black", linetype = "dotted", alpha = 0.5)
 p
 
-#ggplot2::ggsave("Analysis/Figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
+#ggplot2::ggsave("figures/Heatmap of WHO annual cases.png", plot = p,width = 10,height=6)
 
 ## Function to identify endemicity status of the country based on the years prior to study period ----
 

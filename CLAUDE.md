@@ -70,7 +70,6 @@ File names for Stan artefacts come from `utils.R::make_stan_data_filename()` / `
 - `notebooks/systematic_review_summary_report.Rmd` — main summary report (incl. meta-regression results).
 - `notebooks/Systematic-Review-Supplement-tableS2.Rmd`, `...-table-S5.Rmd` — supplement tables.
 - `notebooks/country_report.Rmd` — per-country / continent data reports, rendered by `Analysis/scratchpads/s02_generate_reports.R`.
-- `Analysis/Notebook/` — older exploration / external-data reports.
 - `Analysis/scratchpads/` — exploration only (`s01` VIMC presentation, `s02` report rendering, `s03` direction-of-effect plot restyle); nothing in the pipeline calls it.
 
 ## Conventions
