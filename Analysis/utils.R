@@ -1362,7 +1362,7 @@ getPostStratMatrix <- function(variable,
   counts <- rep(0, length(u_poststrat_strata))
   
   # Loop over poststrat_freq rows to match frequency tables
-  for (i in 1:nrow(poststrat_freq)) {
+  for (i in seq_len(nrow(poststrat_freq))) {
     if (is.null(poststrat_col)) {
       ii <- 1
     } else {
@@ -1448,8 +1448,10 @@ get_effect_sizes <- function(res_files) {
     # Get draw summaries and add info
     stan_fit$summary("eff_size", mean, ~posterior::quantile2(.x, probs = c(0.025, 0.05, 0.95, 0.975))) %>%
       mutate(var = colnames(stan_data$X),
-             what = str_extract(var, get_all_covar_patterns()),
-             strata = str_remove(var, what),
+             what = str_extract(var, get_all_covar_patterns())) %>%
+      # Drop the intercept (no covariate pattern) before using `what` as a pattern
+      filter(!is.na(what)) %>%
+      mutate(strata = str_remove(var, what),
              # Custom fix for dupplicated pattern
              strata = if_else(what == "rainy_season" & strata == "mixed", "both", strata),
              strata = factor(strata, levels = strata_levels)) %>%

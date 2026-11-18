@@ -1089,7 +1089,7 @@ make_summary_table1(data = data %>% group_by(studykey) %>%
 make_summary_table1(data = data %>% group_by(studykey,exp_class) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
-                        a_adjusted == "not stated" ~ "Missing",
+                        any(a_adjusted %in% "not stated") ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
                       ungroup(), "study_adj_sig", "Category",output_cols = "by exp",exp_class_order = c("precipitation", "temperature", "flood","drought")) 
 make_summary_table1(data = data %>% group_by(studykey) %>% 

@@ -275,7 +275,7 @@ make_summary_table1(data = data %>% group_by(studykey,a_direction_col) %>%
 make_summary_table1(data = data %>% group_by(studykey,a_direction_col) %>% 
                       summarize(study_adj_sig = case_when(
                         any(a_adjusted) ~ "TRUE",
-                        a_adjusted == "not stated" ~ "Missing",
+                        any(a_adjusted %in% "not stated") ~ "Missing",
                         TRUE ~ "FALSE")) %>% 
                       ungroup(), "study_adj_sig", "Category", expected_levels = c("true","false")) 
 ```
