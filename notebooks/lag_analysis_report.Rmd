@@ -1,0 +1,163 @@
+---
+title: "Direction of the weather-cholera association by lag"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    number_sections: true
+params:
+  results_path: "generated_data/lag_analysis_results.rds"
+---
+
+```{r setup, echo=F}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(gt)
+
+# Results of Analysis/05_lag_analysis.R (nothing is fitted in this notebook)
+res <- readRDS(here::here(params$results_path))
+fig <- function(x) knitr::include_graphics(here::here("figures", x))
+```
+
+Lag is the time between the weather exposure and the cholera outcome, as extracted from
+each study (`lag_days`), grouped into classes: no lag, 1 week, 2 weeks, 1, 2 and 3 months,
+and more than 3 months. Estimates with a negative lag (exposure after outcome) or no stated
+lag are counted in the first table and left out afterwards. Figures and models are for
+cholera incidence, where almost all lagged estimates are.
+
+# Lag information available
+
+```{r coverage-status}
+res$coverage_status %>%
+  filter(out_class_metric != "other") %>%
+  mutate(cell = str_glue("{n_estimates} ({n_studies})")) %>%
+  select(exp_class, out_class_metric, lag_status, cell) %>%
+  pivot_wider(names_from = lag_status, values_from = cell, values_fill = "0") %>%
+  gt(groupname_col = "exp_class") %>%
+  cols_label(out_class_metric = "Outcome") %>%
+  tab_header(title = "Estimates (studies) by availability of lag information")
+```
+
+```{r coverage-lag}
+res$coverage_lag %>%
+  filter(out_class_metric == "incidence") %>%
+  mutate(cell = str_glue("{n_estimates} ({n_studies})")) %>%
+  select(exp_class, lag_class, cell) %>%
+  pivot_wider(names_from = lag_class, values_from = cell, values_fill = "0", names_sort = TRUE) %>%
+  gt() %>%
+  cols_label(exp_class = "Exposure") %>%
+  tab_header(title = "Estimates (studies) by lag class, incidence")
+```
+
+# Direction of estimates by lag
+
+```{r fig-share, out.width="100%"}
+fig("lag_share_positive.png")
+```
+
+```{r dir-table}
+res$dir_by_lag %>%
+  filter(out_class_metric == "incidence") %>%
+  select(exp_class, lag_class, n_studies, n_pos, n_neg, n_none, frac_pos, frac_pos_lo, frac_pos_hi) %>%
+  gt(groupname_col = "exp_class") %>%
+  fmt_number(columns = starts_with("frac"), decimals = 2) %>%
+  cols_merge(columns = c(frac_pos, frac_pos_lo, frac_pos_hi), pattern = "{1} ({2}-{3})") %>%
+  cols_label(lag_class = "Lag", n_studies = "Studies", n_pos = "Positive", n_neg = "Negative",
+             n_none = "None", frac_pos = "Share positive (95% CI)") %>%
+  tab_header(title = "Direction of estimates by lag, incidence") %>%
+  tab_footnote("Share among positive and negative estimates; Wilson interval ignoring clustering by study.")
+```
+
+## By temporal resolution of the outcome
+
+"No lag" covers different time spans depending on the resolution of the outcome data: with
+monthly or yearly data it still spans weeks to months.
+
+```{r fig-counts, out.width="100%"}
+fig("lag_direction_counts.png")
+```
+
+```{r dir-res-table}
+res$dir_by_lag_res %>%
+  filter(out_class_metric == "incidence", exp_class %in% c("precipitation", "temperature")) %>%
+  mutate(cell = str_glue("{n_pos}/{n_dir}")) %>%
+  select(exp_class, out_res, lag_class, cell) %>%
+  pivot_wider(names_from = lag_class, values_from = cell, values_fill = "-", names_sort = TRUE) %>%
+  gt(groupname_col = "exp_class") %>%
+  cols_label(out_res = "Outcome resolution") %>%
+  tab_header(title = "Positive / directional estimates by lag and outcome resolution, incidence")
+```
+
+# Study-level votes by lag
+
+One vote per study, exposure and lag class, using the rule of the manuscript
+(70% of directional estimates in one direction, otherwise uncertain).
+
+```{r votes}
+res$votes_by_lag %>%
+  filter(out_class_metric == "incidence") %>%
+  select(exp_class, lag_class, higher, lower, uncertain, p_binom) %>%
+  gt(groupname_col = "exp_class") %>%
+  fmt_number(columns = p_binom, decimals = 3) %>%
+  sub_missing() %>%
+  cols_label(lag_class = "Lag", higher = "Higher", lower = "Lower", uncertain = "Uncertain",
+             p_binom = "p (sign test)") %>%
+  tab_header(title = "Study-level votes by lag, incidence")
+```
+
+# Within-study lag profiles
+
+Studies that report two or more lag classes for the same exposure.
+
+```{r fig-profiles, out.width="80%"}
+fig("lag_within_study_profiles.png")
+```
+
+```{r profile-summary}
+res$profile_summary %>%
+  filter(out_class_metric == "incidence") %>%
+  count(exp_class, profile) %>%
+  pivot_wider(names_from = profile, values_from = n, values_fill = 0) %>%
+  gt() %>%
+  cols_label(exp_class = "Exposure") %>%
+  tab_header(title = "Number of studies by lag profile, incidence")
+```
+
+# Lag model
+
+Bernoulli-logit model of the probability that an estimate is positive, with lag class and
+outcome resolution (up to 14 days vs longer) as covariates, a study random effect and
+estimate-level overdispersion: the Stan model of the main direction meta-regression
+(`Analysis/stan/direction_meta_analysis_lag.stan`, a copy with the prior sd of the
+coefficients passed as data). Fitted to precipitation and temperature, incidence,
+national and sub-national estimates with a stated lag. "1 week" and "2 weeks" are merged.
+The second row of the figure keeps only studies with two or more lag classes.
+
+Each model is fitted with two priors on the coefficients: `N(0, 0.5)`, as in the main
+meta-regression, and a wider `N(0, 1.5)`. The tight prior pulls modelled probabilities
+towards the overall mean, away from the observed shares (red crosses) in small lag classes;
+the wide prior follows the data more closely, with wider intervals.
+
+```{r model-check, eval=!is.null(res$models)}
+res$models$diagnostics %>%
+  gt() %>%
+  fmt_number(columns = max_rhat, decimals = 3) %>%
+  tab_header(title = "Model fits")
+```
+
+```{r fig-model, out.width="100%", eval=!is.null(res$models)}
+fig("lag_model_prob_positive.png")
+```
+
+```{r model-or, eval=!is.null(res$models)}
+res$models$odds_ratios %>%
+  filter(what == "lag_class_model") %>%
+  mutate(cell = str_glue("{round(mean, 2)} ({round(q2.5, 2)}-{round(q97.5, 2)})")) %>%
+  mutate(prior = str_glue("N(0, {sd_beta})")) %>%
+  select(exp_class, subset, prior, strata, cell) %>%
+  pivot_wider(names_from = strata, values_from = cell) %>%
+  gt(groupname_col = "exp_class") %>%
+  cols_label(subset = "Studies", prior = "Prior") %>%
+  tab_header(title = "Odds ratio of a positive association vs no lag (95% CrI)")
+```

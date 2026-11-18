@@ -135,7 +135,7 @@ est_data <- #readxl::read_excel(dat_path, sheet = "estimates_0329") %>%
     lag_class = cut(lag_days, c(0, 1, 8, 15, 32, 62, 92, Inf),
                     include.lowest = TRUE, right = FALSE),
     lag_class = factor(lag_class, 
-                       levels = c("[0,1)", "[1,8)", "[8,15)", "[15,32)", "[32,62)", "[62,92)", "[92,Inf)"),
+                       levels = c("[0,1)", "[1,8)", "[8,15)", "[15,32)", "[32,62)", "[62,92)", "[92,Inf]"),
                        labels = c("no lag", "1 week", "2 weeks", "1 month", "2 months", "3 months", "> 3 months")),
     # Define rainy season
     rainy_season = factor(rainy_season, 
